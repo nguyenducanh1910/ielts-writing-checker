@@ -18,7 +18,7 @@ interface Layout {
 function layout(l: Layout): MailMessage {
   const button = l.button
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0"><tr>
-<td bgcolor="#c2410c" style="border-radius:6px">
+<td bgcolor="#2d6a4f" style="border-radius:6px">
 <a href="${e(l.button.url)}" style="display:inline-block;padding:12px 22px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;font-weight:bold">${e(l.button.label)}</a>
 </td></tr></table>`
     : '';
@@ -104,7 +104,7 @@ export function resultEmail(d: ResultEmailData): MailMessage {
     blocks: [
       p(`Hi ${d.name},`),
       p(`${d.taskTypeLabel} · ${d.topic} · ${d.modeLabel}`),
-      `<p style="margin:0 0 12px;font-size:28px;font-weight:bold;color:#c2410c">Overall band ${e(formatBand(d.overall))}</p>`,
+      `<p style="margin:0 0 12px;font-size:28px;font-weight:bold;color:#2d6a4f">Overall band ${e(formatBand(d.overall))}</p>`,
       `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 12px">${rows}</table>`,
       d.summary ? p(d.summary) : '',
       errors,

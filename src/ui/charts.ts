@@ -30,13 +30,13 @@ Chart.register(
 );
 
 export const COLORS = {
-  primary: '#ea580c',
+  primary: '#2d6a4f',
   test: '#334155',
-  target: '#047857',
+  target: '#b45309',
   grey: '#6b7280',
   /** Same colours as the error highlights: TA/TR, CC, LR, GRA. */
   criteria: ['#dc2626', '#ea580c', '#2563eb', '#9333ea'],
-  palette: ['#ea580c', '#334155', '#047857', '#7c3aed', '#be123c', '#0e7490'],
+  palette: ['#2d6a4f', '#334155', '#b45309', '#7c3aed', '#be123c', '#0e7490'],
 };
 
 export function chartBox(

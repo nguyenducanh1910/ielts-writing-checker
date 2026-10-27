@@ -1,20 +1,24 @@
-/* IELTS Harper theme: orange and white. The brand orange is deep enough for white text to
-   pass WCAG AA contrast (4.5:1); links and outlines use a slightly deeper orange. */
+/* IELTS Writing Checker theme: green pastel and white. The header and band hero are pastel green
+   (#cdebd8) with dark green text (#1b4332, 8.7:1), because white text on pastel green fails WCAG AA.
+   Where white text is needed (primary buttons, toasts) the green is deep: #2d6a4f (6.4:1) and
+   #1b4332 on hover (11:1). Links, focus rings and email buttons use #2d6a4f. Input and button
+   borders use #5e9e7a (3.2:1 on white) so fields stay visible. */
 :root {
-  --bg: #fffaf5;
+  --bg: #fafdfb;
   --surface: #ffffff;
-  --surface-2: #fff7ed;
+  --surface-2: #f1faf4;
   --text: #1c1917;
   --muted: #57534e;
-  --border: #fde3cc;
-  --border-strong: #fdba74;
-  --brand: #d2450b;
-  --brand-hover: #b93c0a;
-  --on-brand: #ffffff;
-  --primary: #c2410c;
-  --primary-dark: #9a3412;
-  --primary-soft: #fff7ed;
-  --primary-border: #fed7aa;
+  --border: #cfe8d8;
+  --border-strong: #5e9e7a;
+  --brand: #cdebd8;
+  --brand-hover: #b5dfc4;
+  --on-brand: #1b4332;
+  --on-primary: #ffffff;
+  --primary: #2d6a4f;
+  --primary-dark: #1b4332;
+  --primary-soft: #f1faf4;
+  --primary-border: #cfe8d8;
   --info: #334155;
   --info-soft: #f1f5f9;
   --info-border: #cbd5e1;
@@ -26,7 +30,7 @@
   --danger-soft: #fef2f2;
   --mark: #fde68a;
   --mark-active: #f59e0b;
-  --focus: #c2410c;
+  --focus: #2d6a4f;
   --radius: 12px;
   --radius-small: 8px;
   --shadow: 0 1px 2px rgb(28 25 23 / 4%), 0 2px 8px rgb(28 25 23 / 5%);
@@ -170,12 +174,12 @@ a:hover {
 }
 
 .site-header nav ul a:hover {
-  background: rgb(0 0 0 / 14%);
+  background: var(--brand-hover);
 }
 
 .site-header nav ul a[aria-current='page'] {
   background: var(--surface);
-  color: var(--primary);
+  color: var(--on-brand);
   box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
 }
 
@@ -187,7 +191,7 @@ a:hover {
 }
 
 .site-header > nav:not(#site-nav) a:hover {
-  background: rgb(0 0 0 / 14%);
+  background: var(--brand-hover);
 }
 
 .user-box {
@@ -197,7 +201,7 @@ a:hover {
   font-size: 0.9rem;
   font-weight: 600;
   padding-left: 12px;
-  border-left: 1px solid rgb(255 255 255 / 40%);
+  border-left: 1px solid rgb(27 67 50 / 25%);
 }
 
 .site-header .user-box .btn {
@@ -1213,7 +1217,7 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgb(249 115 22 / 25%);
+  box-shadow: 0 0 0 3px rgb(45 106 79 / 25%);
   outline: none;
 }
 
@@ -1234,17 +1238,17 @@ textarea:focus {
 
 .btn-primary,
 .btn-primary:hover {
-  color: var(--on-brand);
+  color: var(--on-primary);
 }
 
 .btn-primary {
-  background: var(--brand);
-  border-color: var(--brand);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .btn-primary:hover {
-  background: var(--brand-hover);
-  border-color: var(--brand-hover);
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
 }
 
 .btn-small {
@@ -1268,7 +1272,7 @@ textarea:focus {
 
 .spinner {
   border-color: var(--primary-border);
-  border-top-color: var(--brand);
+  border-top-color: var(--primary);
 }
 
 .band-hero {
@@ -1278,8 +1282,12 @@ textarea:focus {
   padding: 14px 24px;
 }
 
+.band-hero strong {
+  color: var(--primary);
+}
+
 .prompt-text {
-  border-left-color: var(--brand);
+  border-left-color: var(--primary);
   background: var(--surface-2);
   border-radius: 0 var(--radius-small) var(--radius-small) 0;
 }

@@ -163,8 +163,13 @@ No service in the spec was replaced; everything runs on GitHub Pages, Apps Scrip
 
 - **Name: IELTS Writing Checker**, logo letter **A**. Used in the header, page titles, the email footer and
   the Gmail sender name.
-- **Orange and white.** The brand orange is #d2450b, the brightest orange where white text still passes WCAG AA
-  (4.5:1); links, focus rings and email buttons use #c2410c. Backgrounds are white or a faint warm white.
+- **Green pastel and white.** The header and band hero are pastel green #cdebd8 with dark green #1b4332 text
+  (8.7:1); white text on pastel green would fail WCAG AA, so `--on-brand` is the dark green. Primary buttons are
+  #2d6a4f with white text (6.4:1), #1b4332 on hover; toasts are #1b4332. Links, focus rings, email buttons and the
+  overall band number use #2d6a4f (6.4:1 on white, 5.0:1 on the pastel). Soft backgrounds #f1faf4, borders #cfe8d8,
+  input and button borders #5e9e7a (3.2:1 on white, so fields stay visible), page background #fafdfb. Header hovers
+  use a slightly darker pastel (#b5dfc4) instead of a dark overlay. In charts, the target line moved from green to
+  amber #b45309 so it does not look like the green score line.
 - **Criterion colours are used consistently**: red TA/TR, orange CC, blue LR, purple GRA for error highlights, feedback
   cards, error badges and the "Average by criterion" chart.
 - The scoring page uses the full screen width with three panels; reconcile notes are collapsed by default.
