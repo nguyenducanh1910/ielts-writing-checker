@@ -352,7 +352,7 @@ ${sources || '(No tool results were pasted.)'}
 
 IMPORTANT: for this message, first answer in plain text (Vietnamese is fine) with three sections:
 1. Disagreements: every criterion where the sources differ by 1 band or more, after allowing for each source's bias.
-2. Argument problems: the argument issues raised in the Perplexity notes, and whether they should change the ${input.taskType === 'task2' ? 'Task Response' : 'Task Achievement'} score.
+2. Argument problems: the argument issues raised in the tools' feedback, and whether they should change the ${input.taskType === 'task2' ? 'Task Response' : 'Task Achievement'} score.
 3. Revised suggestion: your revised score for each criterion, with a one-line reason for each change.
 
 Then, at the very end, give the complete revised result as ONE JSON object in exactly the format from the Project instructions (scores, feedback, general_comment, errors and the other fields), inside a \`\`\`json code block. Update the scores, feedback and general comment to match your revised suggestion; keep the errors from your earlier draft unless you changed your mind about them. Follow the same language rules: feedback, general_comment and notes in Vietnamese; excerpts and corrections in English.`;

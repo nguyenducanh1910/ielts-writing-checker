@@ -209,3 +209,15 @@ No service in the spec was replaced; everything runs on GitHub Pages, Apps Scrip
   so the student's essay page and the scoring page show it ("Time spent X min (practice)").
   It is counted by the student's browser: a guide, not proof (test mode is timed by the server).
 - `[hidden]` now always hides (a class such as `.btn` no longer overrides it).
+
+## Seed data for this copy (2026-10-28)
+
+- **Feedback tools:** `setup()` seeds Claude and Gemini only (`SEED_SOURCES`). More can be added on the Lists page.
+  The reconcile prompt now asks about argument problems raised in any tool's feedback instead of Perplexity's.
+- **No classes are seeded** (`SEED_CLASSES` is empty); the teacher adds their own on the Lists page. Sign-up still
+  asks for a class, so at least one must exist before students sign up.
+- **No demo data on the real site.** The Apps Script `setup()` adds the demo students and essays only when the Script
+  Property `SEED_DEMO` is `true`. The demo brings its own classes (`DEMO_CLASSES`) and the extra tools AI4IELTS,
+  Wispace and Perplexity (`DEMO_SOURCES`) that its sample scores use, so the mock API and the tests keep the same
+  data as before.
+- **Feedback language unchanged:** comments for students stay in Vietnamese.

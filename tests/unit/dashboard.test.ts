@@ -255,6 +255,7 @@ describe('switched-off feedback sources', () => {
     const view = app.call('admin.essay', { id: pending.id }, admin);
     expect(view.sources.filter((s: any) => s.active).map((s: any) => s.name)).toEqual([
       'Claude',
+      'Gemini',
       'Perplexity',
     ]);
   });

@@ -4,6 +4,8 @@ import { overallBand } from '../../shared/band';
 import {
   DEFAULT_SETTINGS,
   OTHER_TOPIC_LABEL,
+  DEMO_CLASSES,
+  DEMO_SOURCES,
   SEED_CLASSES,
   SEED_ERROR_CATEGORIES,
   SEED_SOURCES,
@@ -69,7 +71,7 @@ export function runSetup(svc: Services, options: { demo?: boolean } = {}): Setup
       seeded.push(`setting ${key}`);
     }
   }
-  if (db.all('Classes').length === 0) {
+  if (SEED_CLASSES.length > 0 && db.all('Classes').length === 0) {
     SEED_CLASSES.forEach((label) => db.insert('Classes', { id: svc.uuid(), label, active: true }));
     seeded.push('classes');
   }
@@ -186,6 +188,15 @@ interface DemoEssay {
 
 function seedDemo(ctx: Ctx): void {
   const { db, svc } = ctx;
+  // The demo students and scores use these classes and tools; add the ones that are missing.
+  DEMO_CLASSES.forEach((label) => {
+    if (!db.findOne('Classes', (c) => c.label === label))
+      db.insert('Classes', { id: svc.uuid(), label, active: true });
+  });
+  DEMO_SOURCES.forEach((name) => {
+    if (!db.findOne('FeedbackSources', (s) => s.name === name))
+      db.insert('FeedbackSources', { id: svc.uuid(), name, active: true });
+  });
   const tz = adminTimezone(ctx);
   const classId = (label: string) => db.findOne('Classes', (c) => c.label === label)?.id ?? '';
   const topicId = (label: string) => db.findOne('Topics', (t) => t.label === label)?.id ?? '';

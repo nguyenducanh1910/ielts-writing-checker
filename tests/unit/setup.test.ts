@@ -25,8 +25,10 @@ describe('setup()', () => {
     ]);
     expect(db.all('Topics').length).toBeGreaterThanOrEqual(15);
     expect(db.all('ErrorCategories').length).toBeGreaterThanOrEqual(40);
+    // Claude and Gemini from the seed; the other three come with the demo data.
     expect(db.all('FeedbackSources').map((s) => s.name)).toEqual([
       'Claude',
+      'Gemini',
       'AI4IELTS',
       'Wispace',
       'Perplexity',
@@ -48,5 +50,17 @@ describe('setup()', () => {
     expect(again.createdTabs).toEqual([]);
     expect(again.seeded).toEqual([]);
     expect(createCtx(svc).db.all('Users')).toHaveLength(3);
+  });
+});
+
+describe('setup() without demo data', () => {
+  it('seeds no classes, only Claude and Gemini, and no students', () => {
+    const svc = createMemoryServices();
+    runSetup(svc, { demo: false });
+    const { db } = createCtx(svc);
+    expect(db.all('Classes')).toEqual([]);
+    expect(db.all('FeedbackSources').map((s) => s.name)).toEqual(['Claude', 'Gemini']);
+    expect(db.all('Users').filter((u) => u.role === 'student')).toEqual([]);
+    expect(db.all('Essays')).toEqual([]);
   });
 });

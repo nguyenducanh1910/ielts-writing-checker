@@ -28,7 +28,7 @@ interface FakeFolder {
   trashed: boolean;
 }
 
-function fakeGoogle() {
+function fakeGoogle(extraProps: Record<string, string> = {}) {
   const folders = new Map<string, FakeFolder>([
     ['ROOT', { id: 'ROOT', name: 'Root', parent: '', trashed: false }],
   ]);
@@ -102,6 +102,7 @@ function fakeGoogle() {
     SHEET_ID: 'SHEET',
     DRIVE_ROOT_FOLDER_ID: 'ROOT',
     APP_URL: 'https://example.github.io/app/',
+    ...extraProps,
   };
   const globals = {
     console: { log: () => undefined, error: () => undefined },
@@ -208,7 +209,7 @@ beforeAll(() => {
 
 describe('Apps Script bundle with fake Google services', () => {
   it('runs setup, the JSON API, triggers and jobs', () => {
-    const g = fakeGoogle();
+    const g = fakeGoogle({ SEED_DEMO: 'true' });
     const sandbox: Record<string, any> = { ...g.globals };
     runInNewContext(code, sandbox);
     const post = (action: string, payload: unknown, token?: string) =>
@@ -253,6 +254,19 @@ describe('Apps Script bundle with fake Google services', () => {
     expect(sandbox.dailyJob()).toHaveProperty('reminders');
     expect(sandbox.hourlyJob()).toHaveProperty('emailsSent');
     expect(g.lock.held).toBe(false);
+  });
+
+  it('adds no demo data, no classes and only Claude and Gemini unless SEED_DEMO is true', () => {
+    const g = fakeGoogle();
+    const sandbox: Record<string, any> = { ...g.globals };
+    runInNewContext(code, sandbox);
+    const result = sandbox.setup();
+    expect(result.seeded).not.toContain('demo students and essays');
+    const config = JSON.parse(
+      sandbox.doPost({ postData: { contents: '{"action":"config.get","payload":{}}' } }).content,
+    );
+    expect(config.data.classes).toEqual([]);
+    expect([...g.folders.values()].some((f) => f.name.startsWith('Nguyen Van An'))).toBe(false);
   });
 
   it('answers with a clear error when Script Properties are missing', () => {

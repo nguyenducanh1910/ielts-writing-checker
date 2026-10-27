@@ -14,6 +14,7 @@ function scriptProps(): ScriptProps {
     DRIVE_ROOT_FOLDER_ID: p.getProperty('DRIVE_ROOT_FOLDER_ID') ?? undefined,
     APP_URL: p.getProperty('APP_URL') ?? undefined,
     PORTAL_SECRET: p.getProperty('PORTAL_SECRET') ?? undefined,
+    SEED_DEMO: p.getProperty('SEED_DEMO') ?? undefined,
   };
 }
 
@@ -72,7 +73,10 @@ const drive: DriveService = {
 const mail: MailService = {
   remainingQuota: () => MailApp.getRemainingDailyQuota(),
   send: (m) => {
-    GmailApp.sendEmail(m.to, m.subject, m.text, { htmlBody: m.html, name: 'IELTS Writing Checker' });
+    GmailApp.sendEmail(m.to, m.subject, m.text, {
+      htmlBody: m.html,
+      name: 'IELTS Writing Checker',
+    });
   },
 };
 
@@ -140,7 +144,7 @@ export function setup() {
   const lock = svc.lock;
   lock.waitLock(30000);
   try {
-    const result = runSetup(svc);
+    const result = runSetup(svc, { demo: svc.props.SEED_DEMO === 'true' });
     console.log(JSON.stringify(result, null, 2));
     return result;
   } finally {

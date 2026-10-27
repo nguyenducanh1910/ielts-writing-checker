@@ -85,6 +85,8 @@ export interface ScriptProps {
   APP_URL?: string;
   /** Shared with IELTS Harper Portal (its HARPER_SECRET) for portal.essays.import. */
   PORTAL_SECRET?: string;
+  /** "true" makes setup() add the demo students and essays. Not set: no demo data. */
+  SEED_DEMO?: string;
 }
 
 export interface Services {

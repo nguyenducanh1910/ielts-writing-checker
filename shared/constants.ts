@@ -76,7 +76,11 @@ export const LIMITS = {
   errorsPerEssay: 200,
 } as const;
 
-export const SEED_CLASSES = ['IELTS 4', 'IELTS 5', 'IELTS 7', 'IELTS 8', 'IELTS Buddy'];
+/** No classes by default: the teacher adds their own on the Lists page. */
+export const SEED_CLASSES: string[] = [];
+/** Classes and extra tools that only the demo data (local mock and tests) adds. */
+export const DEMO_CLASSES = ['IELTS 4', 'IELTS 5', 'IELTS 7', 'IELTS 8', 'IELTS Buddy'];
+export const DEMO_SOURCES = ['AI4IELTS', 'Wispace', 'Perplexity'];
 
 export const SEED_TOPICS = [
   'Education',
@@ -98,7 +102,7 @@ export const SEED_TOPICS = [
 
 export const OTHER_TOPIC_LABEL = 'Other';
 
-export const SEED_SOURCES = ['Claude', 'AI4IELTS', 'Wispace', 'Perplexity'];
+export const SEED_SOURCES = ['Claude', 'Gemini'];
 export const CLAUDE_SOURCE_NAME = 'Claude';
 
 export const SEED_ERROR_CATEGORIES: Array<{ criterion: Criterion; label: string }> = [

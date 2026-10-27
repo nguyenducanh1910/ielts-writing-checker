@@ -5,7 +5,7 @@ IELTS Writing practice (Task 1 Academic and Task 2) with teacher scoring.
 - **Students** write essays (Practice, Test or Assigned test mode), submit them, and get their final score, feedback,
   highlighted errors, rewrite requests and a progress dashboard.
 - **The teacher (admin)** scores from a queue: copies the essay to their own Claude.ai Project, pastes Claude's JSON
-  reply back to fill the score form, compares AI4IELTS / Wispace / Perplexity results, edits, and submits. Only the
+  reply back to fill the score form, compares Gemini's result, edits, and submits. Only the
   final score is ever shown to the student, who gets an email from the teacher's Gmail.
 
 Everything runs on free services plus the teacher's own Google account and Claude.ai subscription. There are no paid
@@ -61,10 +61,12 @@ names and its own Apps Script project:
 1. Create an empty Google Sheet `IELTS Writing (TEST)` and a Drive folder `IELTS Writing Essays (TEST)`; note their IDs.
 2. Create a second Apps Script project (step 3.3 below) in a copy of the repo folder, push, and set the Script
    Properties to the test IDs.
-3. Run `setup()`. It creates every tab with headers and seeds topics, classes, about 40 error categories, feedback
-   sources, your admin user and two demo students (`demo.an@example.com`, `demo.binh@example.com`) with sample essays,
-   scores, Drive folders and one rewrite request. Running it again is safe: it only adds what is missing. The demo
-   students use `example.com` addresses, so no real email is ever delivered to them.
+3. Add the Script Property `SEED_DEMO` = `true`, then run `setup()`. It creates every tab with headers and seeds
+   topics, about 40 error categories, the feedback tools (Claude and Gemini), your admin user and, because of
+   `SEED_DEMO`, five demo classes, the extra tools AI4IELTS / Wispace / Perplexity and two demo students
+   (`demo.an@example.com`, `demo.binh@example.com`) with sample essays, scores, Drive folders and one rewrite request.
+   Running it again is safe: it only adds what is missing. The demo students use `example.com` addresses, so no real
+   email is ever delivered to them.
 4. Deploy a web app (step 3.6) and point a local front end at it: create `.env.local` with
    `VITE_API_URL=<test web app URL>` and run `npm run dev`.
 
@@ -115,6 +117,9 @@ Open the project (`npx clasp open-script` from `apps-script/`), go to **Project 
 | `SHEET_ID`             | The Sheet ID from 3.1                                                               |
 | `DRIVE_ROOT_FOLDER_ID` | The folder ID from 3.1                                                              |
 | `APP_URL`              | The front-end URL, e.g. `https://nguyenducanh1910.github.io/ielts-writing-checker/` |
+
+Without `SEED_DEMO`, `setup()` adds no demo students or essays and **no classes**. Students must pick a class when
+they sign up, so add your classes on the **Lists** page before you share the site.
 
 Do not add a `PORTAL_SECRET` property. The code still has a server-to-server import action
 (`portal.essays.import`) inherited from the site this one was copied from; it stays switched off and refuses
@@ -172,7 +177,7 @@ Scoring one essay:
 2. Copy Claude's reply, press **Paste Claude draft**, paste it and press **Check reply**. Invalid replies show which
    fields are wrong and load nothing. Press **Load into form**. Unknown categories and excerpts that could not be found
    in the essay are flagged for you to fix.
-3. Optionally paste AI4IELTS / Wispace / Perplexity results in their tabs (each shows its running bias), press
+3. Optionally paste Gemini's result in its tab (each shows its running bias), press
    **Copy reconcile prompt**, paste it into the same Claude chat and paste the answer into **Reconcile notes**.
 4. Edit the scores, feedback and errors, optionally require a rewrite, and press **Preview and submit score**. The
    preview shows the essay page and the email exactly as the student will receive them. Press **Back to editing** to
@@ -228,15 +233,15 @@ Run through this once after deploying (use your own second email address as a te
        text is back.
 7. [ ] Daily cap: a 4th practice submission within 24 hours is refused with a clear message.
 8. [ ] As admin: the queue shows the essays oldest first. Open one, **Copy for Claude**, paste into your Claude
-       Project, paste the reply back, **Load into form**. Paste one AI4IELTS result. Change one score, tick
+       Project, paste the reply back, **Load into form**. Paste one Gemini result. Change one score, tick
        **Rewrite required** with a due date, **Preview and submit score**, check the preview, **Send to student**.
 9. [ ] The student gets the result email (band, four criteria, top errors, rewrite date, button). In the Sheet:
-       Scores, ErrorLog, SourceFeedback (Claude + AI4IELTS) and EmailEvents rows exist.
+       Scores, ErrorLog, SourceFeedback (Claude + Gemini) and EmailEvents rows exist.
 10. [ ] As the student: the essay page shows scores, feedback and highlighted errors, but nothing from Claude drafts or
-        AI4IELTS. The dashboard shows the rewrite deadline with a countdown. Submit the rewrite; the admin scoring page
+        Gemini. The dashboard shows the rewrite deadline with a countdown. Submit the rewrite; the admin scoring page
         shows the original and its score.
 11. [ ] Type a value starting with `=` in an essay; the Sheet shows it as text, not a formula.
-12. [ ] **Source calibration** shows numbers for Claude and AI4IELTS. Change a score with **Notify student again**
+12. [ ] **Source calibration** shows numbers for Claude and Gemini. Change a score with **Notify student again**
         ticked: exactly one more email arrives.
 13. [ ] In the Apps Script editor, **Triggers** lists `dailyJob` and `hourlyJob`. Run each once by hand: no errors in
         **Executions**.
