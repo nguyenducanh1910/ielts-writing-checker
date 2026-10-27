@@ -1,0 +1,10 @@
+node_modules/
+dist/
+apps-script/dist/
+apps-script/.clasp.json
+.clasprc.json
+playwright-report/
+test-results/
+*.log
+.env.local
+.DS_Store
