@@ -33,7 +33,7 @@ function layout(l: Layout): MailMessage {
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#111827">${e(l.heading)}</h1>
 ${l.blocks.join('\n')}
 ${button}
-<p style="margin:24px 0 0;font-size:13px;color:#4b5563">IELTS Harper · This email was sent by your teacher's account.</p>
+<p style="margin:24px 0 0;font-size:13px;color:#4b5563">IELTS Writing Checker · This email was sent by your teacher's account.</p>
 </td></tr></table></td></tr></table></body></html>`;
   const text = [...l.text, ...(l.button ? ['', `${l.button.label}: ${l.button.url}`] : [])].join(
     '\n',
@@ -46,7 +46,7 @@ const p = (text: string) => `<p style="margin:0 0 12px">${e(text)}</p>`;
 export function loginEmail(to: string, name: string, url: string): MailMessage {
   return layout({
     to,
-    subject: 'Your login link for IELTS Harper',
+    subject: 'Your login link for IELTS Writing Checker',
     preheader: 'This link works once and expires in 15 minutes.',
     heading: `Hi ${name}`,
     blocks: [

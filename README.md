@@ -1,4 +1,4 @@
-# IELTS Writing Scoring by Harper
+# IELTS Writing Checker
 
 IELTS Writing practice (Task 1 Academic and Task 2) with teacher scoring.
 
@@ -109,17 +109,16 @@ every back-end change.
 
 Open the project (`npx clasp open-script` from `apps-script/`), go to **Project Settings → Script Properties** and add:
 
-| Property               | Value                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------- |
-| `ADMIN_EMAIL`          | Your Google/Gmail address. Several admins: comma-separated.                              |
-| `SHEET_ID`             | The Sheet ID from 3.1                                                                    |
-| `DRIVE_ROOT_FOLDER_ID` | The folder ID from 3.1                                                                   |
-| `APP_URL`              | The front-end URL, e.g. `https://ieltsharper.github.io/IELTS-Writing-Scoring-by-Harper/` |
-| `PORTAL_SECRET`        | Optional. The key from IELTS Harper Portal's `createHarperKey` (at least 32 characters). |
+| Property               | Value                                                                               |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `ADMIN_EMAIL`          | Your Google/Gmail address. Several admins: comma-separated.                         |
+| `SHEET_ID`             | The Sheet ID from 3.1                                                               |
+| `DRIVE_ROOT_FOLDER_ID` | The folder ID from 3.1                                                              |
+| `APP_URL`              | The front-end URL, e.g. `https://nguyenducanh1910.github.io/ielts-writing-checker/` |
 
-`PORTAL_SECRET` lets IELTS Harper Portal send the essays of its daily writing task here (action
-`portal.essays.import`, server to server). They join the normal queue and Drive archive. Without it the action
-refuses every request.
+Do not add a `PORTAL_SECRET` property. The code still has a server-to-server import action
+(`portal.essays.import`) inherited from the site this one was copied from; it stays switched off and refuses
+every request while that property is not set.
 
 ### 3.6 Run setup() and installTriggers(), then deploy
 
@@ -158,7 +157,7 @@ The role comes only from `ADMIN_EMAIL`; nothing the browser sends can make someo
 
 The app never calls Claude and holds no Claude key. You use your own Claude.ai subscription:
 
-1. In Claude.ai, create a Project, for example **IELTS Writing Scoring**.
+1. In Claude.ai, create a Project, for example **IELTS Writing Checker Scoring**.
 2. In the app, open **Claude setup** (admin menu). Press **Copy Project instructions** and paste them into the
    Project's instructions. They contain the exact JSON format the app expects.
 3. On the same page, download **error categories** and **calibration samples** and upload both as Project files.

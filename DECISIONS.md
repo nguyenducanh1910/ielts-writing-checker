@@ -161,7 +161,8 @@ No service in the spec was replaced; everything runs on GitHub Pages, Apps Scrip
 
 ## Look and feel
 
-- **Name: IELTS Harper.** Used in the header, page titles, the email footer and the Gmail sender name.
+- **Name: IELTS Writing Checker**, logo letter **A**. Used in the header, page titles, the email footer and
+  the Gmail sender name.
 - **Orange and white.** The brand orange is #d2450b, the brightest orange where white text still passes WCAG AA
   (4.5:1); links, focus rings and email buttons use #c2410c. Backgrounds are white or a faint warm white.
 - **Criterion colours are used consistently**: red TA/TR, orange CC, blue LR, purple GRA for error highlights, feedback
@@ -183,9 +184,16 @@ No service in the spec was replaced; everything runs on GitHub Pages, Apps Scrip
   331 prompts from the teacher's spreadsheet, filtered by topic and question type, searchable,
   with a random pick. Choosing one fills in the prompt, the essay type and the closest topic
   (`shared/promptMatch.ts`); the student can change them. Hidden for Task 1 and for rewrites.
-- `src/data/promptBank.ts` and `shared/promptMatch.ts` are **copies of IELTS Harper Portal's**
-  (`web/src/data/promptBank.ts`, `shared/promptMatch.ts`): change both together. The bank is
+- `src/data/promptBank.ts` and `shared/promptMatch.ts` came from **IELTS Harper Portal**, the original
+  author's other site. This copy has no link to it, so they can be edited here on their own. The bank is
   loaded only when the student opens it.
+
+## Copied from IELTS Harper (2026-10-28)
+
+- This site is a re-branded copy of IELTS Writing Scoring by Harper, with its own GitHub repo, Apps Script
+  project, Sheet and Drive folder.
+- **The portal import stays switched off.** `portal.essays.import` and the one-time portal login are kept
+  unchanged (with their tests) but refuse every request because `PORTAL_SECRET` is never set.
 
 ## Practice mode clock (2026-10-28)
 
