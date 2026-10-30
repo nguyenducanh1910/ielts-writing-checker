@@ -215,11 +215,16 @@ function studentOverview(ctx: Ctx, payload: unknown) {
       id: u.id,
       name: u.name,
       email: u.email,
+      classId: u.class,
       className: ctx.db.byId('Classes', u.class)?.label ?? '',
       targetBand: num(u.target_band),
       examDate: u.exam_date,
       createdAt: u.created_at,
     },
+    // For "Change class": active classes, plus the student's current one even if inactive.
+    classes: ctx.db
+      .find('Classes', (c) => bool(c.active) || c.id === u.class)
+      .map((c) => ({ id: c.id, label: c.label, active: bool(c.active) })),
     essays,
     stats: stats(ctx, null, u.id, filters),
     recurringErrors: recurringErrors(ctx, u.id, '', 90),

@@ -134,6 +134,27 @@ function setStudentPassword(ctx: Ctx, payload: unknown, user: AuthUser) {
   return { saved: true };
 }
 
+/** The teacher moves a student to another class, or to no class (classId ""). */
+function setStudentClass(ctx: Ctx, payload: unknown, user: AuthUser) {
+  const r = new Reader(payload);
+  const studentId = r.id('studentId');
+  const classId = r.id('classId', true);
+  r.done();
+  const student = ctx.db.byId('Users', studentId);
+  if (!student || student.role === 'admin') throw new ApiError('not_found', 'Student not found.');
+  authorize('admin.students.setClass', user, { type: 'user', userId: student.id });
+  const cls = classId ? ctx.db.byId('Classes', classId) : undefined;
+  // An inactive class can be kept, but nobody new is moved into it.
+  if (classId && (!cls || (!bool(cls.active) && classId !== student.class))) {
+    throw new ApiError('bad_request', 'Please check the highlighted fields.', {
+      classId: 'Choose a class from the list',
+    });
+  }
+  ctx.db.update('Users', (u) => u.id === student.id, { class: classId });
+  clearDashboardCache(ctx, student.id);
+  return { classId, className: cls?.label ?? '' };
+}
+
 function updateMe(ctx: Ctx, payload: unknown, user: AuthUser) {
   authorize('me.update', user, { type: 'user', userId: user.id });
   const r = new Reader(payload);
@@ -251,6 +272,10 @@ export const accountActions: Record<string, ActionDef> = {
   'admin.students.setPassword': {
     write: true,
     handler: (ctx, p, user) => setStudentPassword(ctx, p, user!),
+  },
+  'admin.students.setClass': {
+    write: true,
+    handler: (ctx, p, user) => setStudentClass(ctx, p, user!),
   },
   'me.delete': { write: true, handler: (ctx, p, user) => deleteMe(ctx, p, user!) },
 };

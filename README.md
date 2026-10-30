@@ -228,6 +228,8 @@ their email out of the property.
   for login links.
 - **Daily cap** (`daily_submission_cap`, default 3) and **admin time zone** (`admin_timezone`, default
   `Asia/Ho_Chi_Minh`, used for Drive folder dates) are on the **Lists** page or the Sheet's Settings tab.
+- **Classes**: add them on the **Lists** page; students pick one when they sign up. To move a student to another
+  class (or to no class), open **Students** → the student → **Class** → **Save class**.
 - **Drive copy failed** essays show in the queue with a **Retry Drive copy** button. Retries reuse the stored folder.
 - Don't edit the Sheet by hand while people are using the app; if you must, keep the header row unchanged.
 

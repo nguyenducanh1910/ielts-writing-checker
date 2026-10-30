@@ -13,6 +13,7 @@ import {
   link,
   notice,
   page,
+  selectEl,
   showFieldErrors,
   table,
 } from '../../ui/components';
@@ -91,11 +92,13 @@ interface Overview {
     id: string;
     name: string;
     email: string;
+    classId: string;
     className: string;
     targetBand: number | null;
     examDate: string;
     createdAt: string;
   };
+  classes: Array<{ id: string; label: string; active: boolean }>;
   essays: EssaySummary[];
   stats: DashboardStats;
   recurringErrors: Array<{ category: string; count: number }>;
@@ -119,7 +122,7 @@ export function studentOverviewPage(ctx: RouteContext): Node {
   };
   return async(
     () => api<Overview>('admin.studentOverview', { studentId: ctx.params.id, ...filters }),
-    (o) =>
+    (o, reload) =>
       page(
         o.student.name,
         h('p', null, link('/admin/students', '← All students')),
@@ -130,6 +133,7 @@ export function studentOverviewPage(ctx: RouteContext): Node {
           o.student.examDate ? ` · exam ${formatDate(o.student.examDate)}` : '',
           ` · joined ${formatDate(o.student.createdAt)}`,
         ),
+        classForm(o, reload),
         setPasswordForm(o.student.id),
         o.overdueRewrites.length
           ? notice(
@@ -220,6 +224,58 @@ export function studentOverviewPage(ctx: RouteContext): Node {
       ),
     'Loading student…',
   );
+}
+
+/** The teacher moves the student to another class (or to no class). */
+function classForm(o: Overview, reload: () => void): HTMLElement {
+  const cls = selectEl(
+    'classId',
+    o.classes.map((c) => ({ value: c.id, label: c.active ? c.label : `${c.label} (inactive)` })),
+    o.student.classId,
+    'No class',
+  );
+  const status = h('div', { 'aria-live': 'polite' });
+  const save = h('button', { type: 'submit', class: 'btn btn-small' }, 'Save class');
+  const form = h(
+    'form',
+    { class: 'card narrow', novalidate: true },
+    o.classes.length
+      ? null
+      : h(
+          'p',
+          { class: 'hint' },
+          'There are no classes yet. Add them on the ',
+          link('/admin/lists', 'Lists'),
+          ' page.',
+        ),
+    field({ label: 'Class', control: cls, name: 'classId' }),
+    save,
+    status,
+  );
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void busy(save, 'Saving…', async () => {
+      try {
+        const res = await api<{ className: string }>('admin.students.setClass', {
+          studentId: o.student.id,
+          classId: cls.value,
+        });
+        showFieldErrors(form, {});
+        replace(
+          status,
+          notice(
+            'success',
+            res.className ? `Moved to ${res.className}.` : 'Removed from their class.',
+          ),
+        );
+        setTimeout(reload, 1200);
+      } catch (err) {
+        if (err instanceof ApiClientError) showFieldErrors(form, err.fields);
+        replace(status, errorBox(err));
+      }
+    });
+  });
+  return form;
 }
 
 /** The teacher sets a password for a student (e.g. one who forgot it) and tells them in class. */
