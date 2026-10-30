@@ -181,7 +181,24 @@ Scoring one essay:
    **Copy reconcile prompt**, paste it into the same Claude chat and paste the answer into **Reconcile notes**.
 4. Edit the scores, feedback and errors, optionally require a rewrite, and press **Preview and submit score**. The
    preview shows the essay page and the email exactly as the student will receive them. Press **Back to editing** to
-   change anything, or **Send to student** to save the final score and send the email.
+   change anything, **Send to student** to save the final score and send the email, or **Send and open next essay**
+   to do the same and go straight to the next essay (one with a Claude draft ready first, otherwise the oldest
+   waiting).
+
+### Scoring several essays with one Claude message (Task 2)
+
+1. In the **Queue**, open **Batch scoring with Claude (Task 2)** and tick up to 5 Task 2 essays.
+2. Press **Copy batch for Claude**, start a new chat in the Project and paste. Each essay is labelled with an
+   8-character code taken from its ID.
+3. Copy Claude's whole answer, paste it into **Claude's batch answer** and press **Check and save drafts**. Each
+   result is matched to its essay by the code and saved as that essay's Claude draft; results that are invalid or
+   whose code is not in the queue are listed and not saved. A warning appears when most of an essay's excerpts are
+   not in its text, which usually means an answer belongs to another essay.
+4. Open each essay: its draft is waiting, so press **Load into form**, review, then **Send and open next essay**.
+
+Task 1 essays are not offered in batches because each one needs its chart image attached in the chat. After
+updating to this version, press **Copy Project instructions** again and paste them into the Project: they now
+explain the batch answer format.
 
 ### Adding essays yourself
 

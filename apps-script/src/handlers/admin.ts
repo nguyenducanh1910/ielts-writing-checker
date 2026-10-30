@@ -1,7 +1,14 @@
 // Admin queue, scoring page data, Claude drafts, external tool feedback.
 import { overallBand } from '../../../shared/band';
-import { parseClaudeReply } from '../../../shared/claude';
-import { CRITERIA, LIMITS, TASK_TYPES } from '../../../shared/constants';
+import { BATCH_MAX, parseClaudeReply } from '../../../shared/claude';
+import {
+  CRITERIA,
+  diagramTypeLabel,
+  essayTypeLabel,
+  LIMITS,
+  TASK_TYPES,
+} from '../../../shared/constants';
+import { placeExcerpts } from '../../../shared/excerpt';
 import { calibrationFor } from '../calibration';
 import { essayLabel } from '../category';
 import { ApiError, bool, type Ctx, type EssayRow, num, parseJson } from '../context';
@@ -227,6 +234,18 @@ function adminEssay(ctx: Ctx, payload: unknown) {
   };
 }
 
+function insertClaudeDraft(ctx: Ctx, essayId: string, rawText: string, parsedJson: string) {
+  return ctx.db.insert('Drafts', {
+    id: ctx.svc.uuid(),
+    essay_id: essayId,
+    kind: 'initial',
+    raw_text: rawText,
+    // The raw reply can always be parsed again, so drop the parsed copy if it would not fit a cell.
+    parsed_json: parsedJson.length < MAX_CELL ? parsedJson : '',
+    created_at: ctx.nowIso,
+  });
+}
+
 function saveClaudeDraft(ctx: Ctx, payload: unknown) {
   const r = new Reader(payload);
   const essayId = r.id('essayId');
@@ -239,17 +258,85 @@ function saveClaudeDraft(ctx: Ctx, payload: unknown) {
       rawText: parsed.errors.join(' '),
     });
   }
-  const parsedJson = JSON.stringify(parsed.value);
-  const draft = ctx.db.insert('Drafts', {
-    id: ctx.svc.uuid(),
-    essay_id: essay.id,
-    kind: 'initial',
-    raw_text: rawText,
-    // The raw reply can always be parsed again, so drop the parsed copy if it would not fit a cell.
-    parsed_json: parsedJson.length < MAX_CELL ? parsedJson : '',
-    created_at: ctx.nowIso,
-  });
+  const draft = insertClaudeDraft(ctx, essay.id, rawText, JSON.stringify(parsed.value));
   return { id: draft.id, createdAt: draft.created_at };
+}
+
+/** What "Copy batch for Claude" needs for each chosen essay, in one request. */
+function batchPrompt(ctx: Ctx, payload: unknown) {
+  const r = new Reader(payload);
+  const essayIds = r.ids('essayIds', BATCH_MAX);
+  r.done();
+  if (essayIds.length === 0) throw new ApiError('bad_request', 'Choose at least one essay.');
+  return {
+    essays: essayIds.map((id) => {
+      const essay = loadEssay(ctx, id);
+      if (essay.status === 'draft') throw new ApiError('conflict', 'Drafts cannot be scored.');
+      if (essay.task_type !== 'task2') {
+        throw new ApiError(
+          'conflict',
+          'Task 1 essays need their chart image: score them one by one.',
+        );
+      }
+      return {
+        essayId: essay.id,
+        studentName: ctx.db.byId('Users', essay.student_id)?.name ?? '(deleted)',
+        taskType: 'task2' as const,
+        prompt: essay.prompt,
+        topic: ctx.db.byId('Topics', essay.topic_id)?.label ?? '',
+        essayType: essayTypeLabel(essay.essay_type),
+        diagramType: diagramTypeLabel(essay.diagram_type),
+        wordCount: num(essay.word_count) ?? 0,
+        body: essay.body,
+        recurringErrors: recurringErrors(ctx, essay.student_id, essay.id),
+      };
+    }),
+  };
+}
+
+/** Save the Claude drafts from one batch answer. Every reply is checked before anything is saved. */
+function saveClaudeDrafts(ctx: Ctx, payload: unknown) {
+  const r = new Reader(payload);
+  const rows = r.array('drafts', BATCH_MAX).map((raw, i) => {
+    const d = new Reader(raw);
+    const essayId = d.id('essayId');
+    const rawText = d.str('rawText', { max: LIMITS.rawText, trim: false });
+    r.absorb(`drafts[${i}]`, d);
+    return { essayId, rawText };
+  });
+  if (rows.length === 0) r.addError('drafts', 'Required');
+  if (new Set(rows.map((d) => d.essayId)).size !== rows.length)
+    r.addError('drafts', 'Each essay may appear only once');
+  r.done();
+  const checked = rows.map((d) => {
+    const essay = loadEssay(ctx, d.essayId);
+    const parsed = parseClaudeReply(d.rawText);
+    if (!parsed.ok) {
+      throw new ApiError('bad_request', 'A Claude reply is not valid.', {
+        [`drafts.${essay.id}`]: parsed.errors.join(' '),
+      });
+    }
+    // Excerpts that are not in this essay's text suggest the answer belongs to another essay.
+    const unplaced = placeExcerpts(
+      essay.body,
+      parsed.value.errors.map((e) => e.excerpt),
+    ).filter((span) => !span).length;
+    return {
+      essay,
+      rawText: d.rawText,
+      parsedJson: JSON.stringify(parsed.value),
+      errors: parsed.value.errors.length,
+      unplaced,
+    };
+  });
+  return {
+    saved: checked.map((c) => ({
+      essayId: c.essay.id,
+      createdAt: insertClaudeDraft(ctx, c.essay.id, c.rawText, c.parsedJson).created_at,
+      errors: c.errors,
+      unplaced: c.unplaced,
+    })),
+  };
 }
 
 function saveReconcile(ctx: Ctx, payload: unknown) {
@@ -356,6 +443,8 @@ export const adminActions: Record<string, ActionDef> = {
     },
   },
   'admin.saveClaudeDraft': { write: true, handler: (ctx, p) => saveClaudeDraft(ctx, p) },
+  'admin.batchPrompt': { write: false, handler: (ctx, p) => batchPrompt(ctx, p) },
+  'admin.saveClaudeDrafts': { write: true, handler: (ctx, p) => saveClaudeDrafts(ctx, p) },
   'admin.saveReconcile': { write: true, handler: (ctx, p) => saveReconcile(ctx, p) },
   'admin.saveSourceFeedback': { write: true, handler: (ctx, p) => saveSourceFeedback(ctx, p) },
   'admin.retryDrive': { write: true, handler: (ctx, p) => retryDrive(ctx, p) },

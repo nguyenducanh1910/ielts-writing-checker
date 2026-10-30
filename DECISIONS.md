@@ -221,3 +221,20 @@ No service in the spec was replaced; everything runs on GitHub Pages, Apps Scrip
   Wispace and Perplexity (`DEMO_SOURCES`) that its sample scores use, so the mock API and the tests keep the same
   data as before.
 - **Feedback language unchanged:** comments for students stay in Vietnamese.
+
+## Faster scoring (2026-10-30)
+
+- **Send and open next essay** in the preview saves and sends exactly like **Send to student**, then opens the next
+  essay: one whose Claude draft is already pasted first, otherwise the oldest waiting. The send result is shown as a
+  toast because the page changes.
+- **Batch scoring with Claude (Task 2 only):** the queue copies up to 5 essays as one message (`admin.batchPrompt`
+  returns what the prompt needs in one request) and splits Claude's single answer into one draft per essay
+  (`admin.saveClaudeDrafts`, all checked before any is saved). Each essay keeps its own Drafts row, so the scoring
+  page, calibration and "Claude draft pasted" status work as before.
+- **Essays are matched by code, not by order:** the code is the first 8 characters of the essay ID, so pasting works
+  after a reload and a reordered answer cannot go to the wrong essay. The server also reports how many excerpts are not
+  in each essay's text, and the queue warns when most of them are missing.
+- **Task 1 is left out of batches** because every Task 1 essay needs its own chart image attached in the chat.
+- The batch answer may be up to 5 × the single-reply limit; each essay's part must still fit the single-reply limit
+  of 20,000 characters.
+- The Project instructions gained one sentence describing the batch answer format, so the teacher re-pastes them once.

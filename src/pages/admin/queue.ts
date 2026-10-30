@@ -19,6 +19,7 @@ import {
   toast,
 } from '../../ui/components';
 import { formatDateTime, modeLabel, QUEUE_STATUS_LABELS, taskLabel } from '../../ui/format';
+import { batchScoring, canBatch } from './batch';
 import type { QueueItem, QueueResponse } from './types';
 
 const STATUS_KIND: Record<string, string> = {
@@ -97,7 +98,11 @@ export function queuePage(ctx: RouteContext): Node {
               )
             : null,
         ];
-        const rows = data.items.map((item) => queueRow(item, reload));
+        const batch = batchScoring(data.items, reload);
+        const batchable = data.items.some((item) => canBatch(item));
+        const rows = data.items.map((item) =>
+          batchable ? [batch.checkbox(item), ...queueRow(item, reload)] : queueRow(item, reload),
+        );
         return [
           ...banners,
           h(
@@ -108,9 +113,18 @@ export function queuePage(ctx: RouteContext): Node {
             field({ label: 'Status', control: statusSel }),
             field({ label: 'Assignment', control: assignmentSel }),
           ),
+          batchable ? batch.panel : null,
           rows.length
             ? table(
-                ['Student', 'Essay', 'Mode', 'Submitted', 'Status', ''],
+                [
+                  ...(batchable ? ['Batch'] : []),
+                  'Student',
+                  'Essay',
+                  'Mode',
+                  'Submitted',
+                  'Status',
+                  '',
+                ],
                 rows,
                 `${rows.length} essay(s)${filters.status === 'scored' ? ', newest first' : ', oldest first'}`,
               )

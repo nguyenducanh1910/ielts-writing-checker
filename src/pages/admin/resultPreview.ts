@@ -152,15 +152,15 @@ function emailView(server: ServerPreview): HTMLElement {
   );
 }
 
-/**
- * Show the preview. Resolves true when the admin chooses to send/save,
- * false when they go back to editing.
- */
+/** What the admin chose in the preview: go back to editing, send, or send and open the next essay. */
+export type PreviewChoice = 'back' | 'send' | 'next';
+
+/** Show the preview and resolve with the admin's choice. */
 export function openResultPreview(
   content: PreviewContent,
   server: ServerPreview,
   options: { alreadyScored: boolean },
-): Promise<boolean> {
+): Promise<PreviewChoice> {
   return new Promise((resolve) => {
     const delivery =
       server.delivery === 'send'
@@ -183,6 +183,8 @@ export function openResultPreview(
           ? 'Send updated result'
           : 'Send to student'
         : 'Save final score';
+    const nextLabel =
+      server.delivery === 'send' ? 'Send and open next essay' : 'Save and open next essay';
     const returnFocus = document.activeElement as HTMLElement | null;
     const dialog = h(
       'dialog',
@@ -209,21 +211,23 @@ export function openResultPreview(
         'div',
         { class: 'actions preview-actions' },
         h('button', { type: 'button', class: 'btn', 'data-back': '' }, 'Back to editing'),
-        h('button', { type: 'button', class: 'btn btn-primary', 'data-send': '' }, sendLabel),
+        h('button', { type: 'button', class: 'btn', 'data-send': '' }, sendLabel),
+        h('button', { type: 'button', class: 'btn btn-primary', 'data-next': '' }, nextLabel),
         server.delivery === 'send' ? badge(`To: ${server.to}`) : null,
       ),
     );
-    const close = (value: boolean) => {
+    const close = (value: PreviewChoice) => {
       dialog.close();
       dialog.remove();
       if (returnFocus?.isConnected) returnFocus.focus();
       resolve(value);
     };
-    dialog.querySelector('[data-back]')!.addEventListener('click', () => close(false));
-    dialog.querySelector('[data-send]')!.addEventListener('click', () => close(true));
+    dialog.querySelector('[data-back]')!.addEventListener('click', () => close('back'));
+    dialog.querySelector('[data-send]')!.addEventListener('click', () => close('send'));
+    dialog.querySelector('[data-next]')!.addEventListener('click', () => close('next'));
     dialog.addEventListener('cancel', (e) => {
       e.preventDefault();
-      close(false);
+      close('back');
     });
     document.body.appendChild(dialog);
     dialog.showModal();

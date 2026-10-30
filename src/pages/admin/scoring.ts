@@ -21,7 +21,7 @@ import { findExcerpt } from '../../../shared/excerpt';
 import { countWords } from '../../../shared/wordCount';
 import { api, ApiClientError } from '../../api';
 import { type Child, h, replace } from '../../dom';
-import { onLeave, type RouteContext, setUnsavedCheck } from '../../router';
+import { navigate, onLeave, type RouteContext, setUnsavedCheck } from '../../router';
 import {
   async,
   badge,
@@ -46,7 +46,13 @@ import { remoteImage } from '../../ui/image';
 import { plainText } from '../../ui/markdown';
 import { tabs } from '../../ui/tabs';
 import { scoreTable } from '../student/essayDetail';
-import type { AdminEssayResponse, CategoryRow, SourceFeedbackView } from './types';
+import type {
+  AdminEssayResponse,
+  CategoryRow,
+  QueueItem,
+  QueueResponse,
+  SourceFeedbackView,
+} from './types';
 
 interface FormError {
   key: string;
@@ -100,6 +106,41 @@ export function scoringPage(ctx: RouteContext): Node {
     (data, reload) => buildScoring(data, reload),
     'Loading essay…',
   );
+}
+
+/** Short message for the toast shown when leaving for the next essay. */
+const SENT_TOAST: Record<string, [string, 'info' | 'error']> = {
+  sent: ['Score submitted and the result email was sent.', 'info'],
+  queued: ['Score submitted. The email is queued until the Gmail quota resets.', 'info'],
+  failed: ['Score submitted, but the email failed. Resend it from the Email page.', 'error'],
+  no_email: ['Score submitted. This student has no email address.', 'info'],
+  duplicate: ['Score saved. The email had already been sent.', 'info'],
+  none: ['Score saved. No email was sent.', 'info'],
+};
+
+/**
+ * After a score is saved: open the next essay, preferring ones whose Claude draft is already
+ * pasted (for example from a batch), then the oldest still waiting; or the queue when nothing is
+ * left. Returns false when the queue could not be loaded.
+ */
+async function openNextEssay(currentId: string, email: string): Promise<boolean> {
+  let next: QueueItem | undefined;
+  try {
+    const queue = await api<QueueResponse>('admin.queue', {});
+    const others = queue.items.filter((i) => i.id !== currentId);
+    next = others.find((i) => i.queueStatus === 'claude_pasted') ?? others[0];
+  } catch {
+    return false;
+  }
+  const [message, kind] = SENT_TOAST[email] ?? ['Saved.', 'info'];
+  if (next) {
+    toast(`${message} Next: ${next.studentName}.`, kind);
+    navigate(`/admin/score/${next.id}`);
+  } else {
+    toast(`${message} Nothing else is waiting. 🎉`, kind);
+    navigate('/admin');
+  }
+  return true;
 }
 
 function categoryOptions(categories: CategoryRow[], current: string | null): HTMLSelectElement {
@@ -762,7 +803,7 @@ function buildScoring(data: AdminEssayResponse, reload: () => void): Child {
     }
     const categoryName = (id: string | null) =>
       data.categories.find((c) => c.id === id)?.label ?? 'Uncategorised';
-    const ok = await openResultPreview(
+    const choice = await openResultPreview(
       {
         taskType,
         body: essay.body,
@@ -784,17 +825,20 @@ function buildScoring(data: AdminEssayResponse, reload: () => void): Child {
       preview,
       { alreadyScored: essay.status === 'scored' },
     );
-    if (!ok) return;
+    if (choice === 'back') return;
     await busy(submitBtn, 'Submitting…', async () => {
+      let res: { email: string };
       try {
-        const res = await api<{ email: string }>('admin.saveScore', payload(true));
-        dirty = false;
-        requestId = newRequestId();
-        showOutcome(res);
-        setTimeout(reload, 1500);
+        res = await api<{ email: string }>('admin.saveScore', payload(true));
       } catch (err) {
         replace(formStatus, errorBox(err), apiFieldList(err));
+        return;
       }
+      dirty = false;
+      requestId = newRequestId();
+      if (choice === 'next' && (await openNextEssay(essay.id, res.email))) return;
+      showOutcome(res);
+      setTimeout(reload, 1500);
     });
   });
 
