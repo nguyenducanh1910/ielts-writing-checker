@@ -1,4 +1,5 @@
 // Shapes returned by the API (mirrors apps-script/src/views.ts).
+import type { PracticeTask } from '../shared/practice';
 import type { Criterion, Mode, TaskType } from '../shared/constants';
 
 export interface Option {
@@ -85,4 +86,7 @@ export interface EssayDetail extends EssaySummary {
   parent: { id: string; score: ScoreView | null; submittedAt: string } | null;
   rewriteEssay: { id: string; status: string; score: ScoreView | null } | null;
   serverNow?: string;
+  /** Set while the result is locked: the student does these tasks first. */
+  practice: { tasks: PracticeTask[] } | null;
+  resultViewed: boolean;
 }

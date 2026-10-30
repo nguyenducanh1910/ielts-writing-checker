@@ -92,6 +92,11 @@ export class Db {
     return this.all(table).find(pred);
   }
 
+  /** Whether the tab's header row has this column (setup() adds new columns). */
+  hasColumn<T extends TableName>(table: T, column: keyof Row<T> & string): boolean {
+    return this.load(table).header.includes(column);
+  }
+
   byId<T extends TableName>(table: T, id: string): Row<T> | undefined {
     if (!id) return undefined;
     return this.findOne(table, (r) => (r as Record<string, string>).id === id);

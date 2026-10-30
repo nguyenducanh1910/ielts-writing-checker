@@ -7,12 +7,40 @@ import {
   TIME_LIMITS,
   type TaskType,
 } from '../../shared/constants';
+import { buildPracticeTasks, type PracticeError } from '../../shared/practice';
+import type { AuthUser } from './auth';
 import { essayLabel, topicName } from './category';
 import { bool, type Ctx, type EssayRow, num, parseJson } from './context';
 import type { Row } from './schema';
 
 export type StudentEssayStatus =
-  'draft' | 'pending' | 'scored' | 'rewrite_due' | 'rewrite_submitted' | 'overdue';
+  'draft' | 'pending' | 'practice' | 'scored' | 'rewrite_due' | 'rewrite_submitted' | 'overdue';
+
+/** The score is submitted but the student has not finished the error practice yet. */
+export function resultLocked(essay: EssayRow): boolean {
+  return essay.status === 'scored' && essay.practice_required === 'true' && !essay.practice_done_at;
+}
+
+/** Whether this viewer must still do the practice before seeing this essay's result. */
+export function lockedFor(essay: EssayRow, viewer: AuthUser | null | undefined): boolean {
+  return Boolean(viewer && viewer.role !== 'admin' && resultLocked(essay));
+}
+
+/** The practice tasks for an essay, built from its tagged errors (same tasks on every load). */
+export function practiceTasks(ctx: Ctx, essay: EssayRow) {
+  const errors: PracticeError[] = errorsView(ctx, essay.id).map((e) => ({
+    id: e.id,
+    category: e.category,
+    criterion: e.criterion,
+    excerpt: e.excerpt,
+    correction: e.correction,
+    note: e.note,
+    start: e.start,
+    end: e.end,
+  }));
+  const labels = ctx.db.all('ErrorCategories').map((c) => c.label);
+  return buildPracticeTasks(essay.body, errors, labels, essay.id);
+}
 
 export function timeLimitMinutes(ctx: Ctx, essay: EssayRow): number | null {
   if (essay.mode === 'practice') return null;
@@ -59,9 +87,10 @@ export function rewriteView(ctx: Ctx, rr: Row<'RewriteRequests'> | undefined) {
   };
 }
 
-export function studentStatus(ctx: Ctx, essay: EssayRow): StudentEssayStatus {
+export function studentStatus(ctx: Ctx, essay: EssayRow, forStudent = false): StudentEssayStatus {
   if (essay.status === 'draft') return 'draft';
   if (essay.status !== 'scored') return 'pending';
+  if (forStudent && resultLocked(essay)) return 'practice';
   const rr = rewriteRequestFor(ctx, essay.id);
   if (!rr) return 'scored';
   switch (effectiveRewriteStatus(rr, ctx.now)) {
@@ -127,8 +156,10 @@ export function errorsView(ctx: Ctx, essayId: string) {
     .sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity));
 }
 
-export function essaySummary(ctx: Ctx, essay: EssayRow) {
-  const score = essay.status === 'scored' ? scoreView(ctx, essay.id) : null;
+/** `forStudent`: hide the band of a result the student has not unlocked yet. */
+export function essaySummary(ctx: Ctx, essay: EssayRow, forStudent = false) {
+  const hidden = forStudent && resultLocked(essay);
+  const score = essay.status === 'scored' && !hidden ? scoreView(ctx, essay.id) : null;
   const assignment = essay.assignment_id ? ctx.db.byId('Assignments', essay.assignment_id) : null;
   return {
     id: essay.id,
@@ -143,7 +174,7 @@ export function essaySummary(ctx: Ctx, essay: EssayRow) {
     promptPreview: essay.prompt.slice(0, 140),
     wordCount: num(essay.word_count) ?? 0,
     status: essay.status,
-    studentStatus: studentStatus(ctx, essay),
+    studentStatus: studentStatus(ctx, essay, forStudent),
     overall: score?.overall ?? null,
     savedAt: essay.saved_at,
     submittedAt: essay.submitted_at || null,
@@ -158,14 +189,22 @@ export function essaySummary(ctx: Ctx, essay: EssayRow) {
   };
 }
 
-/** Full essay for its owner (or admin). Results only once the essay is scored. */
-export function essayDetail(ctx: Ctx, essay: EssayRow) {
-  const scored = essay.status === 'scored';
+/**
+ * Full essay for its owner (or admin). Results only once the essay is scored, and for a student
+ * only once they have done the error practice: until then `practice` holds the tasks instead.
+ */
+export function essayDetail(ctx: Ctx, essay: EssayRow, viewer?: AuthUser | null) {
+  const locked = lockedFor(essay, viewer);
+  const scored = essay.status === 'scored' && !locked;
   const parent = essay.parent_essay_id ? ctx.db.byId('Essays', essay.parent_essay_id) : undefined;
   const rr = rewriteRequestFor(ctx, essay.id);
   const rewriteEssay = rr?.rewrite_essay_id ? ctx.db.byId('Essays', rr.rewrite_essay_id) : null;
+  const visibleScore = (e: EssayRow) =>
+    e.status === 'scored' && !lockedFor(e, viewer) ? scoreView(ctx, e.id) : null;
   return {
-    ...essaySummary(ctx, essay),
+    ...essaySummary(ctx, essay, Boolean(viewer && viewer.role !== 'admin')),
+    practice: locked ? { tasks: practiceTasks(ctx, essay) } : null,
+    resultViewed: Boolean(essay.result_viewed_at),
     prompt: essay.prompt,
     body: essay.body,
     hasImage: Boolean(essay.image_file_id),
@@ -178,11 +217,12 @@ export function essayDetail(ctx: Ctx, essay: EssayRow) {
     serverNow: ctx.nowIso,
     score: scored ? scoreView(ctx, essay.id) : null,
     errors: scored ? errorsView(ctx, essay.id) : [],
-    rewrite: scored ? rewriteView(ctx, rr) : null,
+    // A rewrite request stays visible while locked: the student needs its deadline.
+    rewrite: essay.status === 'scored' ? rewriteView(ctx, rr) : null,
     parent: parent
       ? {
           id: parent.id,
-          score: parent.status === 'scored' ? scoreView(ctx, parent.id) : null,
+          score: visibleScore(parent),
           submittedAt: parent.submitted_at,
         }
       : null,
@@ -191,8 +231,48 @@ export function essayDetail(ctx: Ctx, essay: EssayRow) {
         ? {
             id: rewriteEssay.id,
             status: rewriteEssay.status,
-            score: rewriteEssay.status === 'scored' ? scoreView(ctx, rewriteEssay.id) : null,
+            score: visibleScore(rewriteEssay),
           }
         : null,
+  };
+}
+
+/** For the teacher: whether the student got, opened and acted on a result. */
+export function resultActivity(ctx: Ctx, essay: EssayRow) {
+  const events = ctx.db
+    .find(
+      'EmailEvents',
+      (e) => e.essay_id === essay.id && (e.type === 'result' || e.type === 'result_resent'),
+    )
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const opened =
+    events
+      .filter((e) => e.opened_at)
+      .map((e) => e.opened_at)
+      .sort()[0] ?? null;
+  const sent = events.filter((e) => e.status === 'sent');
+  const last = events[events.length - 1];
+  const student = ctx.db.byId('Users', essay.student_id);
+  const email = opened
+    ? 'opened'
+    : sent.length
+      ? 'sent'
+      : last
+        ? (last.status as 'queued' | 'failed')
+        : student && !student.email
+          ? 'no_email'
+          : 'none';
+  return {
+    email,
+    emailSentAt: sent[0]?.created_at ?? null,
+    emailOpenedAt: opened,
+    viewedAt: essay.result_viewed_at || null,
+    practice:
+      essay.practice_required !== 'true'
+        ? ('not_required' as const)
+        : essay.practice_done_at
+          ? ('done' as const)
+          : ('waiting' as const),
+    practiceDoneAt: essay.practice_done_at || null,
   };
 }

@@ -19,6 +19,7 @@ import {
   toast,
 } from '../../ui/components';
 import { formatDateTime, modeLabel, QUEUE_STATUS_LABELS, taskLabel } from '../../ui/format';
+import { ACTIVITY_HEADERS, activityCells } from './activity';
 import { batchScoring, canBatch } from './batch';
 import type { QueueItem, QueueResponse } from './types';
 
@@ -100,9 +101,13 @@ export function queuePage(ctx: RouteContext): Node {
         ];
         const batch = batchScoring(data.items, reload);
         const batchable = data.items.some((item) => canBatch(item));
-        const rows = data.items.map((item) =>
-          batchable ? [batch.checkbox(item), ...queueRow(item, reload)] : queueRow(item, reload),
-        );
+        const scoredView = filters.status === 'scored';
+        const rows = data.items.map((item) => {
+          const cells = queueRow(item, reload);
+          // Scored essays: did the student get, open and act on the result?
+          if (scoredView) cells.splice(5, 0, ...activityCells(item.activity));
+          return batchable ? [batch.checkbox(item), ...cells] : cells;
+        });
         return [
           ...banners,
           h(
@@ -123,6 +128,7 @@ export function queuePage(ctx: RouteContext): Node {
                   'Mode',
                   'Submitted',
                   'Status',
+                  ...(scoredView ? ACTIVITY_HEADERS : []),
                   '',
                 ],
                 rows,

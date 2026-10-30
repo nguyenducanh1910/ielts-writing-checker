@@ -16,7 +16,7 @@ import { appUrl, type Ctx, type EssayRow } from './context';
 import { type EmailJob, type EmailType, parseEmailKey } from './email';
 import { resultEmail, rewriteReminderEmail } from './emailTemplates';
 import type { Row } from './schema';
-import { errorsView, rewriteRequestFor, scoreView } from './views';
+import { errorsView, practiceTasks, resultLocked, rewriteRequestFor, scoreView } from './views';
 
 /** Plain-text summary of Markdown feedback for the email (full feedback stays behind login). */
 export function summarize(markdownText: string, max = 400): string {
@@ -79,7 +79,10 @@ export function resultJob(
       const score = scoreView(ctx, essay.id);
       if (!score) throw new Error('This essay has no score');
       const rr = rewriteRequestFor(ctx, essay.id);
+      // A queued email may go out later: use the essay as it is now.
+      const current = ctx.db.byId('Essays', essay.id) ?? essay;
       return resultMessage(ctx, essay, student, {
+        practiceTasks: resultLocked(current) ? practiceTasks(ctx, current).length : 0,
         criteria: score.criteria,
         overall: score.overall,
         generalComment: score.generalComment,
@@ -161,10 +164,13 @@ export function resultMessage(
     topErrors: ReturnType<typeof groupTopErrors>;
     rewriteDueAt: string | null;
     resent: boolean;
+    /** More than 0: the result is locked until the student does this many practice tasks. */
+    practiceTasks: number;
   },
 ) {
   const taskType = essay.task_type as TaskType;
   return resultEmail({
+    practiceTasks: data.practiceTasks,
     to: student.email,
     name: student.name,
     taskTypeLabel: TASK_TYPE_LABELS[taskType],

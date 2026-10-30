@@ -18,7 +18,14 @@ import { archiveEssay } from '../drive';
 import type { ActionDef } from '../router';
 import type { Row } from '../schema';
 import { Reader } from '../validate';
-import { errorsView, essayDetail, rewriteRequestFor, rewriteView, scoreView } from '../views';
+import {
+  errorsView,
+  essayDetail,
+  resultActivity,
+  rewriteRequestFor,
+  rewriteView,
+  scoreView,
+} from '../views';
 
 export type QueueStatus = 'new' | 'claude_pasted' | 'in_review' | 'drive_failed' | 'scored';
 
@@ -79,6 +86,7 @@ function queue(ctx: Ctx, payload: unknown) {
       assignmentTitle: assignments.get(e.assignment_id)?.title ?? null,
       overTime: bool(e.over_time),
       pasteAttempts: num(e.paste_attempts) ?? 0,
+      activity: qs === 'scored' ? resultActivity(ctx, e) : null,
     }));
   // Oldest first; recently scored essays newest first.
   items.sort((a, b) =>

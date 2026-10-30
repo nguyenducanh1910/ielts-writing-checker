@@ -76,9 +76,42 @@ export interface ResultEmailData {
   rewriteDue: string | null;
   url: string;
   resent: boolean;
+  /** More than 0: no score in the email; the student unlocks it with this many tasks. */
+  practiceTasks: number;
+}
+
+/** Result email while the result is locked behind the error practice: no band, no errors. */
+function lockedResultEmail(d: ResultEmailData): MailMessage {
+  const n = d.practiceTasks;
+  const line = `Before you see your band and feedback, complete ${n} short ${n === 1 ? 'task' : 'tasks'} about the mistakes in your essay. It only takes a few minutes.`;
+  const rewrite = d.rewriteDue
+    ? `<p style="margin:12px 0;padding:12px;background:#fef3c7;color:#78350f">Rewrite required by <strong>${e(d.rewriteDue)}</strong>.</p>`
+    : '';
+  return layout({
+    to: d.to,
+    subject: `${d.resent ? 'Updated result' : 'Your essay has been scored'}: ${d.taskTypeLabel} – ${d.topic}`,
+    preheader: line,
+    heading: d.resent ? 'Your essay result was updated' : 'Your essay has been scored',
+    blocks: [
+      p(`Hi ${d.name},`),
+      p(`${d.taskTypeLabel} · ${d.topic} · ${d.modeLabel}`),
+      p(line),
+      rewrite,
+    ],
+    button: { label: 'Start the practice', url: d.url },
+    text: [
+      `Hi ${d.name},`,
+      '',
+      `${d.taskTypeLabel} · ${d.topic} · ${d.modeLabel}`,
+      '',
+      line,
+      ...(d.rewriteDue ? ['', `Rewrite required by ${d.rewriteDue}.`] : []),
+    ],
+  });
 }
 
 export function resultEmail(d: ResultEmailData): MailMessage {
+  if (d.practiceTasks > 0) return lockedResultEmail(d);
   const rows = d.criteria
     .map(
       (c) =>

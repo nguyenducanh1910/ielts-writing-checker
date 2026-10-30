@@ -15,7 +15,7 @@ export function statusBadge(status: string): HTMLElement {
   const kind =
     status === 'overdue'
       ? 'danger'
-      : status === 'rewrite_due'
+      : status === 'rewrite_due' || status === 'practice'
         ? 'warning'
         : status === 'scored'
           ? 'success'

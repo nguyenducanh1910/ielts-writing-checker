@@ -19,7 +19,7 @@ import { ApiError, bool, type Ctx, num } from '../context';
 import { cached } from '../dashboardCache';
 import type { ActionDef } from '../router';
 import { Reader } from '../validate';
-import { errorsView, essaySummary, rewriteView, scoreView } from '../views';
+import { errorsView, essaySummary, resultActivity, rewriteView, scoreView } from '../views';
 import { recurringErrors } from './admin';
 
 /** The student's submitted essays; scores and errors only for scored ones. */
@@ -181,7 +181,10 @@ function studentOverview(ctx: Ctx, payload: unknown) {
   if (!u) throw new ApiError('not_found', 'Student not found.');
   const essays = ctx.db
     .find('Essays', (e) => e.student_id === u.id)
-    .map((e) => essaySummary(ctx, e))
+    .map((e) => ({
+      ...essaySummary(ctx, e),
+      activity: e.status === 'scored' ? resultActivity(ctx, e) : null,
+    }))
     .sort((a, b) => (b.submittedAt ?? b.savedAt).localeCompare(a.submittedAt ?? a.savedAt));
   const rewriteHistory = ctx.db
     .find('RewriteRequests', (x) => essays.some((e) => e.id === x.essay_id))

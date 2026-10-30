@@ -253,6 +253,12 @@ describe('Apps Script bundle with fake Google services', () => {
     expect(g.triggers.map((t) => t.handler).sort()).toEqual(['dailyJob', 'hourlyJob']);
     expect(sandbox.dailyJob()).toHaveProperty('reminders');
     expect(sandbox.hourlyJob()).toHaveProperty('emailsSent');
+
+    // The health check, and the email-open image: an unknown token is ignored, the lock is freed.
+    expect(JSON.parse(sandbox.doGet().content)).toMatchObject({ ok: true });
+    expect(sandbox.doGet({ parameter: { o: '0123456789abcdef0123456789abcdef' } }).content).toBe(
+      '',
+    );
     expect(g.lock.held).toBe(false);
   });
 

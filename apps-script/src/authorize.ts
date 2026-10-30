@@ -4,6 +4,7 @@
 import type { AuthUser } from './auth';
 import { ApiError, type EssayRow } from './context';
 import type { Row } from './schema';
+import { resultLocked } from './views';
 
 export type Resource =
   | { type: 'essay'; essay: EssayRow }
@@ -41,6 +42,8 @@ export const USER_ACTIONS = new Set([
   'essays.submit',
   'essays.deleteDraft',
   'essays.image',
+  'essays.completePractice',
+  'essays.markViewed',
   'assignments.mine',
   'assignments.start',
   'dashboard.get',
@@ -85,7 +88,11 @@ export function authorize(action: string, user: AuthUser | null, resource?: Reso
         if (resource.essay.status !== 'draft') deny('This essay has been submitted and is locked.');
         return;
       }
-      if (action === 'essays.rewrite') {
+      if (
+        action === 'essays.rewrite' ||
+        action === 'essays.completePractice' ||
+        action === 'essays.markViewed'
+      ) {
         if (resource.essay.status !== 'scored') deny();
         return;
       }
@@ -102,6 +109,10 @@ export function authorize(action: string, user: AuthUser | null, resource?: Reso
       if (resource.essay.status !== 'scored') deny();
       if (action.startsWith('admin.')) deny();
       if (!/\.(get|listMine|read)$|^dashboard\.|^topics\./.test(action)) deny();
+      // Scores and corrections unlock only after the error practice.
+      if (resource.type !== 'rewrite' && resultLocked(resource.essay)) {
+        deny('Complete the practice to see your results.');
+      }
       return;
     case 'draft':
     case 'source_feedback':

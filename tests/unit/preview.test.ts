@@ -46,12 +46,14 @@ describe('preview before sending', () => {
       overall: 6,
       delivery: 'send',
     });
-    expect(p.subject).toBe('Your score: Task 1 Academic – Band 6.0');
-    expect(p.text).toContain('Bài viết khá tốt, hãy chú ý thì của động từ!');
-    expect(p.text).toContain('1. Tense: "Vietnam only recycle 10%" -> Vietnam only recycled 10%');
+    // Errors were tagged, so the result is locked behind the practice: no band in the email.
+    expect(p.practiceTasks).toBeGreaterThan(0);
+    expect(p.subject).toBe('Your essay has been scored: Task 1 Academic – Static');
+    expect(p.text).toContain(`complete ${p.practiceTasks} short task`);
     expect(p.text).toContain('Rewrite required by 2026-10-20 23:59');
-    expect(p.text).toContain('Static');
-    expect(p.html).toContain('Band 6.0');
+    expect(p.text).not.toContain('Band');
+    expect(p.html).not.toContain('Band 6.0');
+    expect(p.html).not.toContain('Vietnam only recycled 10%');
     // Nothing saved or sent.
     expect(app.db().find('Scores', (s) => s.essay_id === essay.id)).toHaveLength(0);
     expect(app.db().byId('Essays', essay.id)!).toMatchObject({
@@ -63,13 +65,33 @@ describe('preview before sending', () => {
     expect(app.db().find('EmailEvents', (e) => e.essay_id === essay.id)).toHaveLength(0);
   });
 
+  it('shows the full result email when no errors were tagged', () => {
+    const { app, admin, form } = setup();
+    const p = app.call('admin.previewResult', { ...form, errors: [] }, admin);
+    expect(p.practiceTasks).toBe(0);
+    expect(p.subject).toBe('Your score: Task 1 Academic – Band 6.0');
+    expect(p.text).toContain('Bài viết khá tốt, hãy chú ý thì của động từ!');
+    expect(p.text).toContain('Rewrite required by 2026-10-20 23:59');
+    expect(p.text).toContain('Static');
+    expect(p.html).toContain('Band 6.0');
+  });
+
   it('reports when no email will go out', () => {
     const { app, admin, essay, form } = setup();
     app.call('admin.saveScore', { ...form, submit: true }, admin);
     expect(app.call('admin.previewResult', form, admin).delivery).toBe('none');
     const again = app.call('admin.previewResult', { ...form, notifyAgain: true }, admin);
     expect(again.delivery).toBe('send');
-    expect(again.subject).toContain('Updated score');
+    // Still locked: the student has not done the practice yet.
+    expect(again.subject).toContain('Updated result');
+    expect(again.subject).not.toContain('Band');
+    // Once the practice is done, a re-sent result has the full score and top errors.
+    app.call('essays.completePractice', { id: essay.id }, app.login('demo.an@example.com'));
+    const unlocked = app.call('admin.previewResult', { ...form, notifyAgain: true }, admin);
+    expect(unlocked.subject).toContain('Updated score');
+    expect(unlocked.text).toContain(
+      '1. Tense: "Vietnam only recycle 10%" -> Vietnam only recycled 10%',
+    );
     app.db().update('Users', (u) => u.id === essay.student_id, { email: '' });
     expect(app.call('admin.previewResult', { ...form, notifyAgain: true }, admin).delivery).toBe(
       'no_email',

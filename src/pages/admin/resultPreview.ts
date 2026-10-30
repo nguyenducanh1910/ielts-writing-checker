@@ -19,6 +19,8 @@ export interface ServerPreview {
   subject: string;
   html: string;
   text: string;
+  /** More than 0: the student does this many practice tasks before seeing the result. */
+  practiceTasks: number;
 }
 
 export interface PreviewContent {
@@ -196,6 +198,12 @@ export function openResultPreview(
         'Nothing has been saved or sent yet. Go back to edit anything, then preview again.',
       ),
       delivery,
+      server.practiceTasks > 0
+        ? notice(
+            'info',
+            `The student first completes ${server.practiceTasks} short practice ${server.practiceTasks === 1 ? 'task' : 'tasks'} about their errors. Until then the website and the email do not show the band or feedback.`,
+          )
+        : null,
       tabs(
         [
           { id: 'page', label: 'Essay page', panel: studentView(content, server) },

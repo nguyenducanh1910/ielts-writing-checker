@@ -200,6 +200,32 @@ Task 1 essays are not offered in batches because each one needs its chart image 
 updating to this version, press **Copy Project instructions** again and paste them into the Project: they now
 explain the batch answer format.
 
+### Error practice before the result
+
+When you send a result with at least one tagged error, the student does not see the band or feedback straight away.
+The email says the essay is scored and asks them to complete a few short tasks; on the website, the essay opens on
+**Before you see your score**: up to 5 tasks built from your tagged errors (fill the gap, choose the correct sentence,
+put the words in order, name the mistake, match mistakes to corrections). A wrong answer can be tried again; after two
+wrong tries the answer and your note are shown and the student enters it to continue. When all tasks are done, the
+band, feedback and highlighted errors appear. The preview tells you when this will happen.
+
+- Results without tagged errors are not locked and their email shows the band as before.
+- Results sent before this feature stay open.
+- The tasks come from the excerpt, correction, category and note you save, so clear corrections and short Vietnamese
+  notes make better practice.
+
+### Did the student read it?
+
+In the **Queue**, choose **Status: Scored (edit a score)**; each student's page in **Students** has the same columns:
+
+- **Email**: Sent, then **Opened** when the email's tiny tracking image loads. This is a hint only: some mail apps
+  block images (it stays "Sent"), and some load them automatically (it shows "Opened" without the student reading).
+  Hover to see the time.
+- **Seen on site**: the first time the student opened the result on the website. Exact.
+- **Practice**: Waiting or Done (Not needed when no errors were tagged). Exact.
+
+Results sent before this feature show "–" where nothing was recorded.
+
 ### Adding essays yourself
 
 To score an essay that did not come through the website (written on paper, sent by message…), open the **Queue**
@@ -254,11 +280,13 @@ Run through this once after deploying (use your own second email address as a te
 8. [ ] As admin: the queue shows the essays oldest first. Open one, **Copy for Claude**, paste into your Claude
        Project, paste the reply back, **Load into form**. Paste one Gemini result. Change one score, tick
        **Rewrite required** with a due date, **Preview and submit score**, check the preview, **Send to student**.
-9. [ ] The student gets the result email (band, four criteria, top errors, rewrite date, button). In the Sheet:
-       Scores, ErrorLog, SourceFeedback (Claude + Gemini) and EmailEvents rows exist.
-10. [ ] As the student: the essay page shows scores, feedback and highlighted errors, but nothing from Claude drafts or
-        Gemini. The dashboard shows the rewrite deadline with a countdown. Submit the rewrite; the admin scoring page
-        shows the original and its score.
+9. [ ] The student gets the result email: no band, "complete N short tasks", the rewrite date and a **Start the
+       practice** button. In the Sheet: Scores, ErrorLog, SourceFeedback (Claude + Gemini) and EmailEvents rows exist.
+10. [ ] As the student: the essay opens on the practice; after the last task the page shows scores, feedback and
+        highlighted errors, but nothing from Claude drafts or Gemini. The dashboard shows the rewrite deadline with a
+        countdown. Submit the rewrite; the admin scoring page shows the original and its score. In the Queue's
+        **Scored** view the essay shows Seen on site with a time and Practice **Done**; Email shows **Opened** once the
+        student opened the email with images on.
 11. [ ] Type a value starting with `=` in an essay; the Sheet shows it as text, not a formula.
 12. [ ] **Source calibration** shows numbers for Claude and Gemini. Change a score with **Notify student again**
         ticked: exactly one more email arrives.

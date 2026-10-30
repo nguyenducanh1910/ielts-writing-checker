@@ -49,6 +49,11 @@ export const SCHEMA = {
     'diagram_type',
     /** Task 2: agree_disagree, discussion, pros_cons, res or two_part. */
     'essay_type',
+    /** 'true' when the student must complete the error practice before seeing the result. */
+    'practice_required',
+    'practice_done_at',
+    /** First time the student opened the scored essay on the website. */
+    'result_viewed_at',
   ],
   Assignments: [
     'id',
@@ -116,6 +121,9 @@ export const SCHEMA = {
     'status',
     'error',
     'created_at',
+    /** Result emails: first time the email's tracking image was loaded, and its random token. */
+    'opened_at',
+    'open_token',
   ],
 } as const;
 

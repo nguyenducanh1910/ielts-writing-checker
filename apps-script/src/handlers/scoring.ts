@@ -9,6 +9,7 @@ import {
   LIMITS,
 } from '../../../shared/constants';
 import { endOfDayUtc } from '../../../shared/dates';
+import { buildPracticeTasks } from '../../../shared/practice';
 import { adminTimezone, ApiError, type Ctx, type EssayRow, parseJson } from '../context';
 import { type Category, categoryColumns } from '../category';
 import { clearDashboardCache } from '../dashboardCache';
@@ -19,7 +20,7 @@ import { groupTopErrors, jobFromEvent, resultJob, resultMessage } from '../email
 import type { ActionDef } from '../router';
 import type { Row } from '../schema';
 import { Reader } from '../validate';
-import { effectiveRewriteStatus, rewriteRequestFor } from '../views';
+import { effectiveRewriteStatus, resultLocked, rewriteRequestFor } from '../views';
 
 interface ErrorInput {
   categoryId: string;
@@ -282,6 +283,12 @@ function saveScore(ctx: Ctx, payload: unknown) {
   ctx.db.update('Essays', (x) => x.id === essay.id, {
     status: 'scored',
     scored_at: wasScored && essay.scored_at ? essay.scored_at : ctx.nowIso,
+    // A new result with tagged errors stays locked until the student does the error practice.
+    // Results scored before keep their state, so nobody is locked out of a result they saw.
+    // Only once setup() has added the column, so the email and the website always agree.
+    ...(wasScored || !ctx.db.hasColumn('Essays', 'practice_required')
+      ? {}
+      : { practice_required: errors.length > 0 ? 'true' : '' }),
   });
   ensureClaudeSourceRow(ctx, essay.id);
   clearDashboardCache(ctx, essay.student_id);
@@ -324,7 +331,26 @@ function previewResult(ctx: Ctx, payload: unknown) {
       : null;
   const wasScored = essay.status === 'scored';
   const willEmail = !wasScored || notifyAgain;
+  const locked = wasScored ? resultLocked(essay) : errors.length > 0;
+  const practiceTasks = locked
+    ? buildPracticeTasks(
+        essay.body,
+        errors.map((e, i) => ({
+          id: String(i),
+          category: labels.get(e.categoryId) ?? 'Uncategorised',
+          criterion: 'grammar' as const,
+          excerpt: e.excerpt,
+          correction: e.correction,
+          note: e.note,
+          start: e.start,
+          end: e.end,
+        })),
+        [...labels.values()],
+        essay.id,
+      ).length
+    : 0;
   const message = resultMessage(ctx, { ...essay, ...categoryColumns(category) }, student, {
+    practiceTasks,
     criteria,
     overall,
     generalComment,
@@ -345,6 +371,8 @@ function previewResult(ctx: Ctx, payload: unknown) {
     rewriteDueAt,
     /** 'send' | 'no_email' (student has no address) | 'none' (already scored, not notifying). */
     delivery: !willEmail ? 'none' : student.email ? 'send' : 'no_email',
+    /** Tasks the student does before the result unlocks; 0 when it is not locked. */
+    practiceTasks,
     subject: message.subject,
     html: message.html,
     text: message.text,

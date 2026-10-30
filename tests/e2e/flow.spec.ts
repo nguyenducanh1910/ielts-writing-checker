@@ -2,6 +2,7 @@
 // student signs up, saves a draft, submits; admin pastes a Claude draft and one
 // external result, edits a score, sets a rewrite, submits; an email event is recorded.
 import { expect, type Page, test } from '@playwright/test';
+import { completePractice } from './practice';
 
 const API = 'http://localhost:8788';
 const STUDENT_EMAIL = 'e2e.student@example.com';
@@ -161,8 +162,15 @@ test('student submits an essay; admin scores it with Claude and an external tool
     preview.locator('.preview-student').getByText('A clear answer with a few accuracy problems.'),
   ).toBeVisible();
   await expect(preview.locator('mark.err')).toHaveCount(2);
+  // Errors were tagged, so the student practises them first and the email has no band.
+  await expect(
+    preview.getByText(/The student first completes \d short practice tasks?/),
+  ).toBeVisible();
   await preview.getByRole('tab', { name: 'Email' }).click();
-  await expect(preview.getByText('Your score: Task 2 – Band 6.0')).toBeVisible();
+  await expect(
+    preview.getByText('Your essay has been scored: Task 2 – Education · Discussion'),
+  ).toBeVisible();
+  await expect(preview.getByText(/Band 6\.0/)).toHaveCount(0);
   await expect(preview.getByText(STUDENT_EMAIL).first()).toBeVisible();
   // Going back changes nothing; nothing was sent.
   await preview.getByRole('button', { name: 'Back to editing' }).click();
@@ -201,6 +209,12 @@ test('student submits an essay; admin scores it with Claude and an external tool
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.goto(essayUrl);
+  // ---- The result is locked until the student practises their errors ----
+  await expect(page.locator('.band-hero')).toHaveCount(0);
+  await expect(page.getByText('6.0')).toHaveCount(0);
+  await expect(page.getByText('A rewrite is required by')).toBeVisible();
+  const tasks = await completePractice(page);
+  expect(tasks.length).toBeGreaterThan(0);
   await expect(page.locator('.band-hero strong')).toHaveText('6.0');
   await expect(page.getByRole('heading', { name: 'Rewrite required' })).toBeVisible();
   await expect(page.getByText('AI4IELTS')).toHaveCount(0);

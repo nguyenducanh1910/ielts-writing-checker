@@ -2,6 +2,7 @@
 // Everything else in the back end is plain TypeScript that receives `Services`.
 import { callApi } from './api';
 import { adminTimezone, createCtx } from './context';
+import { recordEmailOpen } from './email';
 import { runSetup } from './setup';
 import { runDailyJob, runHourlyJob } from './triggers';
 import type { DriveService, MailService, ScriptProps, Services, StoredFile } from './services';
@@ -106,6 +107,13 @@ function realServices(): Services {
         return 0; // unknown time zone: fall back to UTC
       }
     },
+    webAppUrl: () => {
+      try {
+        return ScriptApp.getService().getUrl() || '';
+      } catch {
+        return '';
+      }
+    },
     log: (message) => console.log(message),
   };
 }
@@ -116,7 +124,25 @@ function json(data: unknown): GoogleAppsScript.Content.TextOutput {
   );
 }
 
-export function doGet() {
+/** Health check, and the tracking image in result emails (?o=<token>). */
+export function doGet(e?: GoogleAppsScript.Events.DoGet) {
+  const token = e?.parameter?.o;
+  if (token) {
+    try {
+      const svc = realServices();
+      if (svc.lock.tryLock(5000)) {
+        try {
+          recordEmailOpen(createCtx(svc), token);
+        } finally {
+          svc.lock.releaseLock();
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    // Apps Script cannot return an image; an empty reply is enough to record the open.
+    return ContentService.createTextOutput('');
+  }
   return json({ ok: true, data: { service: 'ielts-writing' } });
 }
 

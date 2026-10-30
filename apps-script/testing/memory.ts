@@ -293,6 +293,12 @@ export class MemoryLock implements LockLike {
     this.held = true;
     this.acquisitions++;
   }
+  tryLock() {
+    if (this.held) return false;
+    this.held = true;
+    this.acquisitions++;
+    return true;
+  }
   releaseLock() {
     this.held = false;
   }
@@ -364,6 +370,7 @@ export function createMemoryServices(
     sha256Hex: (text: string) => sha256(text),
     now: clock,
     tzOffsetMinutes: intlTzOffsetMinutes,
+    webAppUrl: () => 'https://script.example/exec',
     log: () => undefined,
     setNow(date) {
       current = new Date(date);

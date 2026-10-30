@@ -130,13 +130,18 @@ describe('Submit score', () => {
     });
     expect(app.db().byId('Essays', essayId)!.status).toBe('scored');
 
-    // The result email has the essentials and escapes text.
+    // Errors were tagged, so the result is locked behind the practice: the email has no score.
+    expect(app.db().byId('Essays', essayId)!.practice_required).toBe('true');
     const mail = app.svc.mail.outbox.at(-1)!;
     expect(mail.to).toBe('demo.binh@example.com');
-    expect(mail.subject).toContain('Band 6.0');
-    expect(mail.text).toContain('Task Response: 6.5');
-    expect(mail.text).toContain('Subject-verb agreement');
+    expect(mail.subject).toBe('Your essay has been scored: Task 2 – Technology · Discussion');
+    expect(mail.subject).not.toContain('Band');
+    expect(mail.text).not.toContain('Task Response: 6.5');
+    expect(mail.text).toMatch(/complete \d short tasks? about the mistakes/);
     expect(mail.html).toContain('#/essays/' + essayId);
+    // It carries the open-tracking image with the token stored on the event.
+    expect(events[0].open_token).toMatch(/^[a-f0-9]{32}$/);
+    expect(mail.html).toContain(`https://script.example/exec?o=${events[0].open_token}`);
   });
 
   it('only shows the final score to the student after Submit score', () => {
@@ -149,6 +154,11 @@ describe('Submit score', () => {
     expect(view.errors).toEqual([]);
     expect(app.svc.mail.outbox.filter((m) => m.subject.includes('score'))).toHaveLength(0);
     app.call('admin.saveScore', scorePayload(p), admin);
+    // Locked until the practice is done, then the full result.
+    const locked = app.call('essays.get', { id: essayId }, student);
+    expect(locked.score).toBeNull();
+    expect(locked.practice.tasks.length).toBeGreaterThan(0);
+    expect(app.call('essays.completePractice', { id: essayId }, student).score.overall).toBe(6);
     expect(app.call('essays.get', { id: essayId }, student).score.overall).toBe(6);
   });
 
@@ -256,7 +266,10 @@ describe('Submit score', () => {
     // End of 12 Oct in Asia/Ho_Chi_Minh (UTC+7) = 16:59:59.999Z.
     expect(rr.due_at).toBe('2026-10-12T16:59:59.999Z');
     let view = app.call('essays.get', { id: essayId }, student);
+    // The deadline shows even before the practice is done.
+    expect(view.studentStatus).toBe('practice');
     expect(view.rewrite).toMatchObject({ status: 'requested', note: 'Fix SVA' });
+    view = app.call('essays.completePractice', { id: essayId }, student);
     expect(view.studentStatus).toBe('rewrite_due');
 
     app.svc.advance(3 * 86400000); // past the due date

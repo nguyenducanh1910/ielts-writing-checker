@@ -22,6 +22,7 @@ import {
   essayDetail,
   essaySummary,
   rewriteRequestFor,
+  resultLocked,
 } from '../views';
 
 interface ImageInput {
@@ -358,6 +359,37 @@ function getImage(ctx: Ctx, payload: unknown, user: AuthUser) {
   return { mimeType: file.mimeType, base64: file.base64 };
 }
 
+/** The student finished the error practice: unlock the result and return it. */
+function completePractice(ctx: Ctx, payload: unknown, user: AuthUser) {
+  const r = new Reader(payload);
+  const id = r.id('id');
+  r.done();
+  const essay = loadEssay(ctx, id);
+  authorize('essays.completePractice', user, { type: 'essay', essay });
+  if (resultLocked(essay)) {
+    ctx.db.update('Essays', (e) => e.id === essay.id, {
+      practice_done_at: ctx.nowIso,
+      result_viewed_at: essay.result_viewed_at || ctx.nowIso,
+    });
+    clearDashboardCache(ctx, essay.student_id);
+  }
+  return essayDetail(ctx, loadEssay(ctx, id), user);
+}
+
+/** The student opened their scored essay on the website (first time only is kept). */
+function markViewed(ctx: Ctx, payload: unknown, user: AuthUser) {
+  const r = new Reader(payload);
+  const id = r.id('id');
+  r.done();
+  const essay = loadEssay(ctx, id);
+  authorize('essays.markViewed', user, { type: 'essay', essay });
+  // Only the student's own visits count; the teacher looking at the page does not.
+  if (user.role !== 'admin' && !essay.result_viewed_at) {
+    ctx.db.update('Essays', (e) => e.id === essay.id, { result_viewed_at: ctx.nowIso });
+  }
+  return { viewed: true };
+}
+
 export const essayActions: Record<string, ActionDef> = {
   'essays.listMine': {
     write: false,
@@ -367,7 +399,7 @@ export const essayActions: Record<string, ActionDef> = {
       r.done();
       return ctx.db
         .find('Essays', (e) => e.student_id === user!.id && (!mode || e.mode === mode))
-        .map((e) => essaySummary(ctx, e))
+        .map((e) => essaySummary(ctx, e, user!.role !== 'admin'))
         .sort((a, b) => (b.submittedAt ?? b.savedAt).localeCompare(a.submittedAt ?? a.savedAt));
     },
   },
@@ -379,9 +411,14 @@ export const essayActions: Record<string, ActionDef> = {
       r.done();
       const essay = loadEssay(ctx, id);
       authorize('essays.get', user, { type: 'essay', essay });
-      return essayDetail(ctx, essay);
+      return essayDetail(ctx, essay, user);
     },
   },
+  'essays.completePractice': {
+    write: true,
+    handler: (ctx, p, user) => completePractice(ctx, p, user!),
+  },
+  'essays.markViewed': { write: true, handler: (ctx, p, user) => markViewed(ctx, p, user!) },
   'essays.saveDraft': { write: true, handler: (ctx, p, user) => saveDraft(ctx, p, user!) },
   'essays.startTest': { write: true, handler: (ctx, p, user) => startTest(ctx, p, user!) },
   'essays.submit': { write: true, handler: (ctx, p, user) => submit(ctx, p, user!) },

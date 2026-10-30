@@ -22,6 +22,7 @@ import {
 import { remoteImage } from '../../ui/image';
 import { markdown } from '../../ui/markdown';
 import { statusBadge } from './essays';
+import { practiceView } from './practice';
 
 export function scoreTable(score: ScoreView, taskType: TaskType): HTMLElement {
   return table(
@@ -89,7 +90,11 @@ function errorList(errors: ErrorView[], onPick: (id: string) => void): HTMLEleme
 export function essayDetailPage(ctx: RouteContext): Node {
   return async(
     () => api<EssayDetail>('essays.get', { id: ctx.params.id }),
-    (essay) => {
+    (essay, reload) => {
+      // The teacher sees whether the student opened the result (the first visit is kept).
+      if (essay.status === 'scored' && !essay.resultViewed) {
+        void api('essays.markViewed', { id: essay.id }).catch(() => undefined);
+      }
       const meta = h(
         'p',
         { class: 'meta' },
@@ -137,6 +142,26 @@ export function essayDetailPage(ctx: RouteContext): Node {
       renderText();
 
       const sections: Child[] = [meta, facts];
+
+      // Result locked: the error practice first, then the page reloads with the full result.
+      if (essay.practice) {
+        sections.push(practiceView(essay.id, essay.practice.tasks, reload));
+        if (essay.rewrite && essay.rewrite.status !== 'waived') {
+          sections.push(
+            notice(
+              'warning',
+              `A rewrite is required by ${formatDateTime(essay.rewrite.dueAt)}. You will see the details after the practice.`,
+            ),
+          );
+        }
+        sections.push(
+          h('h2', null, 'Task'),
+          h('p', { class: 'prompt-text' }, essay.prompt),
+          h('h2', null, 'Your essay'),
+          textBox,
+        );
+        return page(essay.parentEssayId ? 'Rewrite' : 'Essay', ...sections);
+      }
 
       if (essay.status === 'draft') {
         sections.push(

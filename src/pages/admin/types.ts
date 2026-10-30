@@ -2,6 +2,7 @@ import type { ClaudeDraft } from '../../../shared/claude';
 import type { Criterion } from '../../../shared/constants';
 import type { SourceCalibration } from '../../../shared/stats';
 import type { EssayDetail, ErrorView, ScoreView } from '../../types';
+import type { ResultActivity } from './activity';
 
 export interface QueueItem {
   id: string;
@@ -20,6 +21,8 @@ export interface QueueItem {
   overTime: boolean;
   pasteAttempts: number;
   uploadedByAdmin: boolean;
+  /** Scored essays only. */
+  activity: ResultActivity | null;
 }
 
 export interface QueueResponse {

@@ -65,6 +65,7 @@ export function modeLabel(m: string): string {
 export const STUDENT_STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
   pending: 'Pending',
+  practice: 'Practice to unlock',
   scored: 'Scored',
   rewrite_due: 'Rewrite due',
   rewrite_submitted: 'Rewrite submitted',

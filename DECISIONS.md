@@ -238,3 +238,28 @@ No service in the spec was replaced; everything runs on GitHub Pages, Apps Scrip
 - The batch answer may be up to 5 × the single-reply limit; each essay's part must still fit the single-reply limit
   of 20,000 characters.
 - The Project instructions gained one sentence describing the batch answer format, so the teacher re-pastes them once.
+
+## Error practice and result activity (2026-10-30)
+
+- **New results with tagged errors are locked** until the student completes the error practice
+  (`Essays.practice_required` is set on the first Submit score; `practice_done_at` when they finish). Results
+  scored before, and results without errors, are never locked, so nobody loses access to a result they saw.
+- **The lock is enforced by the server:** `authorize()` refuses scores and errors of a locked essay to students, so
+  the essay page, the essay list (band hidden, status "Practice to unlock") and the dashboard (bands, charts and the
+  error list whose corrections are the answers) leave it out. Rewrite deadlines stay visible. The teacher sees
+  everything as before.
+- **The result email of a locked result has no band and no errors** (also not in the subject); it says how many
+  tasks to do and links to the essay. A queued email is rebuilt when it goes out, so it matches the essay then.
+- **Tasks are built from the tagged errors** (`shared/practice.ts`, no AI): fill the gap, choose the correct sentence,
+  put the words in order, name the mistake, and one matching task when 4+ errors have corrections; at most 5. The
+  essay ID seeds the shuffle so a reload shows the same tasks. Answers are checked in the browser (ignoring case,
+  extra spaces, curly quotes and final punctuation); a determined student could read them in the developer tools,
+  which is accepted for a class site. Translation and definition tasks would need Claude-written content: a
+  possible later addition.
+- **Activity for the teacher:** "Seen on site" (`result_viewed_at`, set by the student's first visit) and "Practice"
+  are exact. "Opened" comes from a 1×1 image in result emails pointing at the web app (`doGet ?o=<token>`, token in
+  `EmailEvents.open_token`, first load in `opened_at`). Apps Script cannot return an image, so it answers with empty
+  text; mail apps that block images never report an open and some load images automatically, so it is a hint. The
+  teacher's preview never contains the image. The privacy notice says all this.
+- **`setup()` must be run once after this update** to add the five new columns. Until then the columns are missing,
+  nothing is locked or recorded, and the site keeps working as before.

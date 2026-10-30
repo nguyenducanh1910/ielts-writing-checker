@@ -268,6 +268,11 @@ export function privacyPage(): Node {
         null,
         'Your name, email, class, target band and exam date (if you add them), the essays you write, chart images you upload, your scores, feedback and the errors your teacher tags.',
       ),
+      h(
+        'p',
+        null,
+        'When your teacher sends you a result, the website also records when you first open it and when you finish its practice tasks. The result email contains a tiny image that tells your teacher when the email was opened (this does not work if your email app blocks images).',
+      ),
       h('h2', null, 'Where it is stored'),
       h(
         'p',

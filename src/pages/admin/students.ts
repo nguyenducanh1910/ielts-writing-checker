@@ -2,6 +2,7 @@
 import { api, ApiClientError } from '../../api';
 import { h, replace } from '../../dom';
 import { navigate, type RouteContext } from '../../router';
+import { ACTIVITY_HEADERS, activityCells, type ResultActivity } from './activity';
 import type { EssaySummary, RewriteView } from '../../types';
 import {
   async,
@@ -99,7 +100,7 @@ interface Overview {
     createdAt: string;
   };
   classes: Array<{ id: string; label: string; active: boolean }>;
-  essays: EssaySummary[];
+  essays: Array<EssaySummary & { activity: ResultActivity | null }>;
   stats: DashboardStats;
   recurringErrors: Array<{ category: string; count: number }>;
   topics: TopicHistory;
@@ -173,7 +174,7 @@ export function studentOverviewPage(ctx: RouteContext): Node {
         h('h2', null, 'Essays'),
         o.essays.length
           ? table(
-              ['Essay', 'Task', 'Mode', 'Status', 'Band', 'Submitted'],
+              ['Essay', 'Task', 'Mode', 'Status', 'Band', 'Submitted', ...ACTIVITY_HEADERS],
               o.essays.map((e) => [
                 e.status === 'draft'
                   ? `${e.topic} (draft)`
@@ -183,6 +184,7 @@ export function studentOverviewPage(ctx: RouteContext): Node {
                 statusBadge(e.studentStatus),
                 formatBand(e.overall),
                 formatDateTime(e.submittedAt),
+                ...activityCells(e.activity),
               ]),
             )
           : empty('No essays yet.'),

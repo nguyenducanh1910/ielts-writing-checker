@@ -75,6 +75,8 @@ export interface CacheLike {
 /** Subset of LockService.Lock. */
 export interface LockLike {
   waitLock(timeoutInMillis: number): void;
+  /** Like waitLock, but returns false instead of throwing when the lock is busy. */
+  tryLock(timeoutInMillis: number): boolean;
   releaseLock(): void;
 }
 
@@ -101,5 +103,7 @@ export interface Services {
   now(): Date;
   /** Offset of the time zone from UTC at the given instant, in minutes (e.g. +420 for UTC+7). */
   tzOffsetMinutes(date: Date, timeZone: string): number;
+  /** This web app's /exec URL (for the email-open image); empty when unknown. */
+  webAppUrl(): string;
   log(message: string): void;
 }
