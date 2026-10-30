@@ -17,7 +17,7 @@ import { countWords } from '../../shared/wordCount';
 import { adminEmails, adminTimezone, createCtx, type Ctx } from './context';
 import { archiveEssay, saveUploadedImage } from './drive';
 import { SCHEMA, TABLE_NAMES } from './schema';
-import type { Services } from './services';
+import type { Services, SheetLike } from './services';
 
 /** A tiny PNG used as the demo chart image. */
 const DEMO_PNG =
@@ -27,6 +27,12 @@ export interface SetupResult {
   createdTabs: string[];
   addedColumns: string[];
   seeded: string[];
+}
+
+/** New tabs have 26 columns: add more before writing past them, or Sheets refuses the range. */
+function ensureColumns(sheet: SheetLike, count: number): void {
+  const max = sheet.getMaxColumns();
+  if (count > max) sheet.insertColumnsAfter(max, count - max);
 }
 
 export function runSetup(svc: Services, options: { demo?: boolean } = {}): SetupResult {
@@ -39,6 +45,7 @@ export function runSetup(svc: Services, options: { demo?: boolean } = {}): Setup
       createdTabs.push(name);
     }
     const columns = SCHEMA[name] as readonly string[];
+    ensureColumns(sheet, columns.length);
     // Plain text everywhere so Sheets never converts dates, numbers or formulas.
     sheet.getRange(1, 1, sheet.getMaxRows(), columns.length).setNumberFormat('@');
     if (sheet.getLastRow() === 0) {
@@ -53,6 +60,7 @@ export function runSetup(svc: Services, options: { demo?: boolean } = {}): Setup
       const missing = columns.filter((c) => !header.includes(c));
       if (missing.length) {
         const used = header.filter(Boolean).length;
+        ensureColumns(sheet, used + missing.length);
         sheet.getRange(1, used + 1, 1, missing.length).setNumberFormat('@');
         sheet.getRange(1, used + 1, 1, missing.length).setValues([missing]);
         addedColumns.push(...missing.map((c) => `${name}.${c}`));

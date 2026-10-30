@@ -15,8 +15,10 @@ export interface SheetLike {
   getLastRow(): number;
   getLastColumn(): number;
   getMaxRows(): number;
+  getMaxColumns(): number;
   getRange(row: number, column: number, numRows: number, numColumns: number): RangeLike;
   insertRowsAfter(afterPosition: number, howMany: number): unknown;
+  insertColumnsAfter(afterPosition: number, howMany: number): unknown;
   deleteRow(rowPosition: number): unknown;
   setFrozenRows(rows: number): unknown;
 }

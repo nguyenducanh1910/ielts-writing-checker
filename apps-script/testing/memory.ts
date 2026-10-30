@@ -42,6 +42,8 @@ export class MemorySheet implements SheetLike {
   /** Per row, the columns formatted as plain text ("@"). Shifts with deleted rows. */
   textFormat: Array<Set<number>> = [];
   maxRows = 1000;
+  /** A new Google Sheets tab has 26 columns (A–Z); ranges past them fail, like in Sheets. */
+  maxColumns = 26;
   frozenRows = 0;
   constructor(private name: string) {}
 
@@ -56,6 +58,13 @@ export class MemorySheet implements SheetLike {
   }
   getMaxRows() {
     return this.maxRows;
+  }
+  getMaxColumns() {
+    return this.maxColumns;
+  }
+  insertColumnsAfter(afterPosition: number, howMany: number) {
+    if (afterPosition > this.maxColumns) throw new Error('Column out of bounds');
+    this.maxColumns += howMany;
   }
   insertRowsAfter(afterPosition: number, howMany: number) {
     if (afterPosition > this.maxRows) throw new Error('Row out of bounds');
@@ -76,6 +85,11 @@ export class MemorySheet implements SheetLike {
   getRange(row: number, column: number, numRows: number, numColumns: number): RangeLike {
     if (row < 1 || row + numRows - 1 > this.maxRows) {
       throw new Error(`Range is out of bounds (row ${row + numRows - 1} > ${this.maxRows})`);
+    }
+    if (column < 1 || column + numColumns - 1 > this.maxColumns) {
+      throw new Error(
+        `The coordinates of the range are outside the dimensions of the sheet (column ${column + numColumns - 1} > ${this.maxColumns})`,
+      );
     }
     return {
       getValues: () => {

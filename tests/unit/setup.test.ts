@@ -64,3 +64,26 @@ describe('setup() without demo data', () => {
     expect(db.all('Essays')).toEqual([]);
   });
 });
+
+describe('setup() on a Sheet from an earlier version', () => {
+  it('adds new columns past column Z, where a new tab ends', () => {
+    const svc = createMemoryServices();
+    // An Essays tab as the first version created it: 26 columns, so it is exactly full.
+    const old = SCHEMA.Essays.slice(0, 26);
+    const sheet = svc.spreadsheet.insertSheet('Essays');
+    expect(sheet.getMaxColumns()).toBe(26);
+    sheet.getRange(1, 1, 1, old.length).setValues([[...old]]);
+    const result = runSetup(svc, { demo: false });
+    expect(result.addedColumns).toEqual([
+      'Essays.practice_required',
+      'Essays.practice_done_at',
+      'Essays.result_viewed_at',
+    ]);
+    expect(sheet.getRange(1, 1, 1, SCHEMA.Essays.length).getValues()[0]).toEqual([
+      ...SCHEMA.Essays,
+    ]);
+    // Rows can be written across all the columns afterwards.
+    const { db } = createCtx(svc);
+    expect(db.hasColumn('Essays', 'result_viewed_at')).toBe(true);
+  });
+});
