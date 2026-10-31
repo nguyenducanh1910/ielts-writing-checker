@@ -9,6 +9,7 @@ import {
   TASK_TYPES,
 } from '../../../shared/constants';
 import { placeExcerpts } from '../../../shared/excerpt';
+import { PROMPT_KEY_RE, promptKey, promptLabel } from '../../../shared/promptKey';
 import { calibrationFor } from '../calibration';
 import { essayLabel } from '../category';
 import { ApiError, bool, type Ctx, type EssayRow, num, parseJson } from '../context';
@@ -45,6 +46,30 @@ function loadEssay(ctx: Ctx, id: string): EssayRow {
   return essay;
 }
 
+/** Prompt keys of submitted essays, worked out once per request. */
+function promptKeys(ctx: Ctx): Map<string, string> {
+  const keys = new Map<string, string>();
+  for (const e of ctx.db.find('Essays', (x) => x.status !== 'draft')) {
+    keys.set(e.id, promptKey(e.prompt));
+  }
+  return keys;
+}
+
+/** Prompts answered by two or more submitted essays, most answered first. */
+function promptGroups(ctx: Ctx, keys: Map<string, string>, include: string) {
+  const groups = new Map<string, { key: string; label: string; count: number }>();
+  for (const e of ctx.db.find('Essays', (x) => x.status !== 'draft')) {
+    const key = keys.get(e.id);
+    if (!key) continue;
+    const g = groups.get(key);
+    if (g) g.count++;
+    else groups.set(key, { key, label: promptLabel(e.prompt), count: 1 });
+  }
+  return [...groups.values()]
+    .filter((g) => g.count >= 2 || g.key === include)
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
 function queue(ctx: Ctx, payload: unknown) {
   const r = new Reader(payload);
   const taskType = r.oneOf('taskType', TASK_TYPES, true);
@@ -52,23 +77,27 @@ function queue(ctx: Ctx, payload: unknown) {
   const assignmentId = r.id('assignmentId', true);
   const status = r.oneOf(
     'status',
-    ['new', 'claude_pasted', 'in_review', 'drive_failed', 'scored'] as const,
+    ['new', 'claude_pasted', 'in_review', 'drive_failed', 'scored', 'all'] as const,
     true,
   );
+  const prompt = r.str('promptKey', { max: 16, optional: true });
+  if (prompt && !PROMPT_KEY_RE.test(prompt)) r.addError('promptKey', 'Invalid prompt');
   r.done();
   const users = new Map(ctx.db.all('Users').map((u) => [u.id, u]));
   const assignments = new Map(ctx.db.all('Assignments').map((a) => [a.id, a]));
+  const keys = promptKeys(ctx);
   const items = ctx.db
     .find('Essays', (e) => {
       if (e.status === 'draft') return false;
-      if (status !== 'scored' && e.status === 'scored') return false;
+      if (status !== 'scored' && status !== 'all' && e.status === 'scored') return false;
       if (taskType && e.task_type !== taskType) return false;
       if (studentId && e.student_id !== studentId) return false;
       if (assignmentId && e.assignment_id !== assignmentId) return false;
+      if (prompt && keys.get(e.id) !== prompt) return false;
       return true;
     })
     .map((e) => ({ essay: e, qs: queueStatus(ctx, e) }))
-    .filter((x) => !status || x.qs === status)
+    .filter((x) => !status || status === 'all' || x.qs === status)
     .map(({ essay: e, qs }) => ({
       id: e.id,
       studentId: e.student_id,
@@ -111,6 +140,7 @@ function queue(ctx: Ctx, payload: unknown) {
       .map((u) => ({ id: u.id, name: u.name }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     assignments: [...assignments.values()].map((a) => ({ id: a.id, title: a.title })),
+    prompts: promptGroups(ctx, keys, prompt),
     emailQueued,
     emailFailed,
   };
@@ -229,6 +259,7 @@ function adminEssay(ctx: Ctx, payload: unknown) {
     topics: ctx.db.all('Topics').map((t) => ({ id: t.id, label: t.label, active: bool(t.active) })),
     recurringErrors: recurringErrors(ctx, essay.student_id, essay.id),
     isSample: Boolean(ctx.db.findOne('CalibrationSamples', (s) => s.essay_id === essay.id)),
+    samePrompt: samePrompt(ctx, essay),
     emailEvents: ctx.db
       .find('EmailEvents', (e) => e.essay_id === essay.id)
       .map((e) => ({
@@ -409,6 +440,54 @@ function saveSourceFeedback(ctx: Ctx, payload: unknown) {
   return sourceFeedbackView(row);
 }
 
+/** How many submitted essays (this one included) answer the same prompt. */
+function samePrompt(ctx: Ctx, essay: EssayRow): { key: string; count: number } | null {
+  const key = promptKey(essay.prompt);
+  if (!key) return null;
+  const count = ctx.db.find(
+    'Essays',
+    (e) => (e.status !== 'draft' || e.id === essay.id) && promptKey(e.prompt) === key,
+  ).length;
+  return { key, count };
+}
+
+/** Full text of up to READ_MAX essays for the Read all page, in the order asked for. */
+export const READ_MAX = 20;
+
+function readEssays(ctx: Ctx, payload: unknown) {
+  const r = new Reader(payload);
+  const ids = r.ids('ids', READ_MAX);
+  r.done();
+  const users = new Map(ctx.db.all('Users').map((u) => [u.id, u]));
+  const classes = new Map(ctx.db.all('Classes').map((c) => [c.id, c.label]));
+  const assignments = new Map(ctx.db.all('Assignments').map((a) => [a.id, a.title]));
+  return {
+    items: ids
+      .map((id) => ctx.db.byId('Essays', id))
+      .filter((e): e is EssayRow => Boolean(e) && e!.status !== 'draft')
+      .map((e) => {
+        const student = users.get(e.student_id);
+        const qs = queueStatus(ctx, e);
+        return {
+          id: e.id,
+          studentName: student?.name ?? '(deleted)',
+          className: (student && classes.get(student.class)) || '',
+          taskType: e.task_type,
+          topic: essayLabel(ctx, e),
+          prompt: e.prompt,
+          body: e.body,
+          wordCount: num(e.word_count) ?? 0,
+          submittedAt: e.submitted_at,
+          hasImage: Boolean(e.image_file_id),
+          queueStatus: qs,
+          overall: qs === 'scored' ? (scoreView(ctx, e.id)?.overall ?? null) : null,
+          isRewrite: Boolean(e.parent_essay_id),
+          assignmentTitle: assignments.get(e.assignment_id) ?? null,
+        };
+      }),
+  };
+}
+
 function retryDrive(ctx: Ctx, payload: unknown) {
   const r = new Reader(payload);
   const essayId = r.id('essayId');
@@ -438,6 +517,7 @@ function toggleSample(ctx: Ctx, payload: unknown) {
 export const adminActions: Record<string, ActionDef> = {
   'admin.queue': { write: false, handler: (ctx, p) => queue(ctx, p) },
   'admin.essay': { write: false, handler: (ctx, p) => adminEssay(ctx, p) },
+  'admin.readEssays': { write: false, handler: (ctx, p) => readEssays(ctx, p) },
   'admin.essayImage': {
     write: false,
     handler: (ctx, p) => {

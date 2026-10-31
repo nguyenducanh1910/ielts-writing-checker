@@ -29,6 +29,8 @@ export interface QueueResponse {
   items: QueueItem[];
   students: Array<{ id: string; name: string }>;
   assignments: Array<{ id: string; title: string }>;
+  /** Prompts answered by two or more essays, most answered first. */
+  prompts: Array<{ key: string; label: string; count: number }>;
   emailQueued: number;
   emailFailed: number;
 }
@@ -78,6 +80,8 @@ export interface AdminEssayResponse {
   categories: CategoryRow[];
   topics: Array<{ id: string; label: string; active: boolean }>;
   recurringErrors: Array<{ category: string; count: number }>;
+  /** Submitted essays (this one included) that answer the same prompt. */
+  samePrompt: { key: string; count: number } | null;
   isSample: boolean;
   emailEvents: Array<{
     id: string;
@@ -87,4 +91,22 @@ export interface AdminEssayResponse {
     createdAt: string;
     key: string;
   }>;
+}
+
+/** One essay on the Read all page. */
+export interface ReadItem {
+  id: string;
+  studentName: string;
+  className: string;
+  taskType: string;
+  topic: string;
+  prompt: string;
+  body: string;
+  wordCount: number;
+  submittedAt: string;
+  hasImage: boolean;
+  queueStatus: string;
+  overall: number | null;
+  isRewrite: boolean;
+  assignmentTitle: string | null;
 }

@@ -1668,3 +1668,92 @@ tbody tr:hover td {
 .practice-match .field {
   margin-bottom: 10px;
 }
+
+/* Read all: essays one after another, with a list of names beside them */
+.filter-wide {
+  flex: 1 1 320px;
+}
+
+.filter-wide select {
+  width: 100%;
+}
+
+.read-layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.read-nav {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+}
+
+.read-nav-title {
+  font-size: 1rem;
+  margin: 0 0 6px;
+}
+
+.read-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.read-nav-link {
+  display: block;
+  padding: 3px 4px;
+  border-radius: var(--radius-small);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.read-nav-link:hover {
+  background: var(--surface-2);
+}
+
+.read-nav-link.read::after {
+  content: ' ✓';
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.read-essay {
+  scroll-margin-top: 12px;
+  margin-bottom: 20px;
+}
+
+.read-essay h2 {
+  margin-top: 0;
+}
+
+.read-class {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+kbd {
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 0.9em;
+  background: var(--surface);
+}
+
+@media (max-width: 720px) {
+  .read-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .read-nav {
+    position: static;
+    max-height: 200px;
+  }
+}

@@ -6,11 +6,13 @@ import { claudeSetupPage } from './claudeSetup';
 import { emailsPage } from './emails';
 import { listsPage } from './lists';
 import { queuePage } from './queue';
+import { readAllPage } from './read';
 import { scoringPage } from './scoring';
 import { studentOverviewPage, studentsPage } from './students';
 
 export const routes: Route[] = [
   { pattern: '/admin', guard: 'admin', title: 'Queue', render: queuePage },
+  { pattern: '/admin/read', guard: 'admin', title: 'Read all', render: readAllPage },
   { pattern: '/admin/essays/new', guard: 'admin', title: 'Add an essay', render: addEssayPage },
   { pattern: '/admin/score/:id', guard: 'admin', title: 'Scoring', render: scoringPage },
   { pattern: '/admin/students', guard: 'admin', title: 'Students', render: studentsPage },

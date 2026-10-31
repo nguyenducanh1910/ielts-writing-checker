@@ -39,6 +39,7 @@ import {
 } from '../../ui/components';
 import { type CategoryValues, categoryFields } from '../../ui/categoryFields';
 import { copyText } from '../../ui/clipboard';
+import { NEXT_KEYS, queueFilters } from './queue';
 import { openResultPreview, type ServerPreview } from './resultPreview';
 import { essayText, highlightLegend, selectionOffsets } from '../../ui/essayText';
 import { formatBand, formatDateTime, modeLabel, signed, taskLabel } from '../../ui/format';
@@ -103,7 +104,7 @@ function newRequestId(): string {
 export function scoringPage(ctx: RouteContext): Node {
   return async(
     () => api<AdminEssayResponse>('admin.essay', { id: ctx.params.id }),
-    (data, reload) => buildScoring(data, reload),
+    (data, reload) => buildScoring(data, reload, queueFilters(ctx.query, NEXT_KEYS)),
     'Loading essay…',
   );
 }
@@ -123,19 +124,34 @@ const SENT_TOAST: Record<string, [string, 'info' | 'error']> = {
  * pasted (for example from a batch), then the oldest still waiting; or the queue when nothing is
  * left. Returns false when the queue could not be loaded.
  */
-async function openNextEssay(currentId: string, email: string): Promise<boolean> {
+async function openNextEssay(
+  currentId: string,
+  email: string,
+  filters: Record<string, string>,
+): Promise<boolean> {
   let next: QueueItem | undefined;
-  try {
-    const queue = await api<QueueResponse>('admin.queue', {});
+  let inGroup = false;
+  const pick = (queue: QueueResponse) => {
     const others = queue.items.filter((i) => i.id !== currentId);
-    next = others.find((i) => i.queueStatus === 'claude_pasted') ?? others[0];
+    return others.find((i) => i.queueStatus === 'claude_pasted') ?? others[0];
+  };
+  const filtered = Object.keys(filters).length > 0;
+  try {
+    // Opened from a filtered queue or Read all: stay in that group while anything is left.
+    if (filtered) {
+      next = pick(await api<QueueResponse>('admin.queue', filters));
+      inGroup = Boolean(next);
+    }
+    next ??= pick(await api<QueueResponse>('admin.queue', {}));
   } catch {
     return false;
   }
   const [message, kind] = SENT_TOAST[email] ?? ['Saved.', 'info'];
   if (next) {
-    toast(`${message} Next: ${next.studentName}.`, kind);
-    navigate(`/admin/score/${next.id}`);
+    const groupNote = filtered && !inGroup ? ' Nothing else is waiting in that group.' : '';
+    toast(`${message}${groupNote} Next: ${next.studentName}.`, kind);
+    const query = new URLSearchParams(inGroup ? filters : {}).toString();
+    navigate(`/admin/score/${next.id}${query ? `?${query}` : ''}`);
   } else {
     toast(`${message} Nothing else is waiting. 🎉`, kind);
     navigate('/admin');
@@ -163,7 +179,11 @@ function categoryOptions(categories: CategoryRow[], current: string | null): HTM
   return sel;
 }
 
-function buildScoring(data: AdminEssayResponse, reload: () => void): Child {
+function buildScoring(
+  data: AdminEssayResponse,
+  reload: () => void,
+  nextFilters: Record<string, string>,
+): Child {
   const essay = data.essay;
   const taskType = essay.taskType;
   const activeCats = data.categories.filter((c) => c.active);
@@ -290,6 +310,16 @@ function buildScoring(data: AdminEssayResponse, reload: () => void): Child {
     driveStatusBox(data, reload),
     h('h3', null, 'Prompt'),
     h('p', { class: 'prompt-text' }, essay.prompt),
+    data.samePrompt && data.samePrompt.count > 1
+      ? h(
+          'p',
+          null,
+          link(
+            `/admin/read?${new URLSearchParams({ promptKey: data.samePrompt.key, status: 'all' })}`,
+            `Read all ${data.samePrompt.count} essays on this prompt`,
+          ),
+        )
+      : null,
     essay.hasImage
       ? remoteImage('admin.essayImage', { essayId: essay.id }, 'Chart or diagram for this task')
       : null,
@@ -836,7 +866,7 @@ function buildScoring(data: AdminEssayResponse, reload: () => void): Child {
       }
       dirty = false;
       requestId = newRequestId();
-      if (choice === 'next' && (await openNextEssay(essay.id, res.email))) return;
+      if (choice === 'next' && (await openNextEssay(essay.id, res.email, nextFilters))) return;
       showOutcome(res);
       setTimeout(reload, 1500);
     });

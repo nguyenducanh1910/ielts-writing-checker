@@ -38,8 +38,9 @@ export function queuePage(ctx: RouteContext): Node {
     studentId: q.get('studentId') ?? '',
     status: q.get('status') ?? '',
     assignmentId: q.get('assignmentId') ?? '',
+    promptKey: q.get('promptKey') ?? '',
   };
-  const payload = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
+  const payload = queueFilters(q);
   return page(
     'Scoring queue',
     h('p', null, link('/admin/essays/new', 'Add an essay', { class: 'btn btn-primary' })),
@@ -68,6 +69,7 @@ export function queuePage(ctx: RouteContext): Node {
           [
             ...Object.entries(QUEUE_STATUS_LABELS).map(([value, label]) => ({ value, label })),
             { value: 'scored', label: 'Scored (edit a score)' },
+            { value: 'all', label: 'All essays (waiting and scored)' },
           ],
           filters.status,
           'All waiting',
@@ -78,7 +80,14 @@ export function queuePage(ctx: RouteContext): Node {
           filters.assignmentId,
           'All essays',
         );
+        const promptSel = selectEl(
+          'promptKey',
+          data.prompts.map((p) => ({ value: p.key, label: `${p.label} (${p.count} essays)` })),
+          filters.promptKey,
+          'All prompts',
+        );
         taskSel.addEventListener('change', () => apply('taskType', taskSel.value));
+        promptSel.addEventListener('change', () => apply('promptKey', promptSel.value));
         studentSel.addEventListener('change', () => apply('studentId', studentSel.value));
         statusSel.addEventListener('change', () => apply('status', statusSel.value));
         assignmentSel.addEventListener('change', () => apply('assignmentId', assignmentSel.value));
@@ -103,7 +112,7 @@ export function queuePage(ctx: RouteContext): Node {
         const batchable = data.items.some((item) => canBatch(item));
         const scoredView = filters.status === 'scored';
         const rows = data.items.map((item) => {
-          const cells = queueRow(item, reload);
+          const cells = queueRow(item, reload, filterQuery(q, NEXT_KEYS));
           // Scored essays: did the student get, open and act on the result?
           if (scoredView) cells.splice(5, 0, ...activityCells(item.activity));
           return batchable ? [batch.checkbox(item), ...cells] : cells;
@@ -117,7 +126,21 @@ export function queuePage(ctx: RouteContext): Node {
             field({ label: 'Student', control: studentSel }),
             field({ label: 'Status', control: statusSel }),
             field({ label: 'Assignment', control: assignmentSel }),
+            h('div', { class: 'filter-wide' }, field({ label: 'Prompt', control: promptSel })),
           ),
+          rows.length
+            ? h(
+                'p',
+                null,
+                link(
+                  `/admin/read${filterQuery(q)}`,
+                  `Read all ${rows.length} essay${rows.length === 1 ? '' : 's'}`,
+                  { class: 'btn' },
+                ),
+                ' ',
+                h('span', { class: 'hint' }, 'One after another on one page, in this order.'),
+              )
+            : null,
           batchable ? batch.panel : null,
           rows.length
             ? table(
@@ -137,7 +160,9 @@ export function queuePage(ctx: RouteContext): Node {
             : empty(
                 filters.status === 'scored'
                   ? 'No scored essays match these filters.'
-                  : 'Nothing is waiting to be scored. 🎉',
+                  : filters.status === 'all'
+                    ? 'No essays match these filters.'
+                    : 'Nothing is waiting to be scored. 🎉',
               ),
         ];
       },
@@ -146,7 +171,23 @@ export function queuePage(ctx: RouteContext): Node {
   );
 }
 
-function queueRow(item: QueueItem, reload: () => void) {
+const FILTER_KEYS = ['taskType', 'studentId', 'status', 'assignmentId', 'promptKey'];
+
+/** The queue filters in a URL query, as an admin.queue payload (empty values left out). */
+export function queueFilters(q: URLSearchParams, keys = FILTER_KEYS): Record<string, string> {
+  return Object.fromEntries(keys.map((k) => [k, q.get(k) ?? '']).filter(([, v]) => v));
+}
+
+/** "?taskType=…&…" for the given filters, or '' when there are none. */
+export function filterQuery(q: URLSearchParams, keys = FILTER_KEYS): string {
+  const next = new URLSearchParams(queueFilters(q, keys));
+  return next.toString() ? `?${next}` : '';
+}
+
+/** Filters that pick which essays come next after scoring (the status is always "waiting"). */
+export const NEXT_KEYS = ['taskType', 'studentId', 'assignmentId', 'promptKey'];
+
+function queueRow(item: QueueItem, reload: () => void, next: string) {
   const retry =
     item.queueStatus === 'drive_failed'
       ? h('button', { type: 'button', class: 'btn btn-small' }, 'Retry Drive copy')
@@ -190,9 +231,13 @@ function queueRow(item: QueueItem, reload: () => void) {
       STATUS_KIND[item.queueStatus],
     ),
     [
-      link(`/admin/score/${item.id}`, item.queueStatus === 'scored' ? 'Edit score' : 'Score', {
-        class: 'btn btn-small btn-primary',
-      }),
+      link(
+        `/admin/score/${item.id}${next}`,
+        item.queueStatus === 'scored' ? 'Edit score' : 'Score',
+        {
+          class: 'btn btn-small btn-primary',
+        },
+      ),
       ' ',
       retry,
       status,
