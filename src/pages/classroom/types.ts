@@ -37,6 +37,23 @@ export interface Overview {
   /** Last daily health check (null: never ran). */
   health?: Health | null;
   version?: string;
+  /** Classes created on Google Classroom that the system does not track yet. */
+  newClasses?: NewClass[];
+  /** Tracked classes with a penalty file, usable as the template for a new class. */
+  templates?: Array<{ id: string; name: string }>;
+}
+
+export interface NewClass {
+  id: string;
+  name: string;
+  section?: string;
+  link?: string;
+  students: number;
+}
+
+export interface TrackResult {
+  message: string;
+  penaltyLink: string;
 }
 
 export interface Health {

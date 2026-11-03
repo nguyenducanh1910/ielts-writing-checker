@@ -1,8 +1,9 @@
 // Lớp học › Tổng quan: what needs the teacher today, assignments around now, classes, recent activity.
 import { api } from '../../api';
 import { classroom } from '../../classroomApi';
-import { h, replace } from '../../dom';
+import { type Child, h, replace } from '../../dom';
 import { async, busy, empty, errorBox, link } from '../../ui/components';
+import { newClassesSection, refreshClassesButton } from './newClasses';
 import type { QueueResponse } from '../admin/types';
 import type { Health, Overview, OverviewAssignment } from './types';
 import { dueText, externalLink, pageHeader, progress, statTile, viDateTime } from './ui';
@@ -113,131 +114,129 @@ export function healthCard(initial: Health | null | undefined): HTMLElement {
 }
 
 export function overviewPage(): Node {
+  return h(
+    'section',
+    { class: 'page cl-page' },
+    async(
+      load,
+      ({ ov, writingQueue }, reload) => overviewContent(ov, writingQueue, reload),
+      'Đang tải dữ liệu lớp học…',
+    ),
+  );
+}
+
+function overviewContent(ov: Overview, writingQueue: number | null, reload: () => void): Child[] {
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long',
     day: 'numeric',
     month: 'numeric',
     timeZone: 'Asia/Ho_Chi_Minh',
   });
-  return h(
-    'section',
-    { class: 'page cl-page' },
-    async(
-      load,
-      ({ ov, writingQueue }) => {
-        const t = ov.todo;
-        const upcoming = ov.assignments.filter((a) => Date.parse(a.dueAt) >= Date.now());
-        const recent = ov.assignments.filter((a) => Date.parse(a.dueAt) < Date.now()).reverse();
-        return [
-          pageHeader(
-            ov.teacherName ? `Chào ${ov.teacherName}` : 'Tổng quan',
-            today.charAt(0).toUpperCase() + today.slice(1),
-            link('/lop/giao-bai', 'Giao bài mới', { class: 'btn btn-primary' }),
-            externalLink(ov.sheetUrl, 'Mở Google Sheet ↗', 'btn'),
-          ),
-          h(
-            'div',
-            { class: 'cl-stats' },
-            statTile({
-              value: t.review,
-              label: 'Speaking chờ duyệt',
-              href: '/lop/bai-nop?view=review',
-              tone: t.review ? 'warn' : 'ok',
-            }),
-            statTile({
-              value: writingQueue ?? '–',
-              label: 'Writing chờ chấm',
-              href: '/admin',
-              tone: writingQueue ? 'warn' : 'ok',
-            }),
-            statTile({
-              value: t.error,
-              label: 'Cần kiểm tra tay',
-              href: '/lop/bai-nop?view=error',
-              tone: t.error ? 'danger' : 'ok',
-            }),
-            statTile({
-              value: t.approved,
-              label: 'Đã duyệt, chờ gửi',
-              href: '/lop/bai-nop?view=approved',
-              hint: t.approved ? 'Tự gửi trong vòng 1 giờ' : undefined,
-            }),
-          ),
-          h(
-            'div',
-            { class: 'cl-grid' },
-            h(
-              'div',
-              null,
-              h('h2', null, 'Sắp đến hạn'),
-              upcoming.length
-                ? h('div', { class: 'cl-assign-list' }, ...upcoming.map(assignmentCard))
-                : empty(
-                    'Không có bài nào đến hạn trong 14 ngày tới.',
-                    link('/lop/giao-bai', 'Giao bài mới'),
-                  ),
-              h('h2', null, 'Vừa hết hạn (7 ngày)'),
-              recent.length
-                ? h('div', { class: 'cl-assign-list' }, ...recent.map(assignmentCard))
-                : empty('Không có bài nào hết hạn trong 7 ngày qua.'),
+  const t = ov.todo;
+  const upcoming = ov.assignments.filter((a) => Date.parse(a.dueAt) >= Date.now());
+  const recent = ov.assignments.filter((a) => Date.parse(a.dueAt) < Date.now()).reverse();
+  return [
+    pageHeader(
+      ov.teacherName ? `Chào ${ov.teacherName}` : 'Tổng quan',
+      today.charAt(0).toUpperCase() + today.slice(1),
+      link('/lop/giao-bai', 'Giao bài mới', { class: 'btn btn-primary' }),
+      externalLink(ov.sheetUrl, 'Mở Google Sheet ↗', 'btn'),
+    ),
+    newClassesSection(ov.newClasses, ov.templates),
+    h(
+      'div',
+      { class: 'cl-stats' },
+      statTile({
+        value: t.review,
+        label: 'Speaking chờ duyệt',
+        href: '/lop/bai-nop?view=review',
+        tone: t.review ? 'warn' : 'ok',
+      }),
+      statTile({
+        value: writingQueue ?? '–',
+        label: 'Writing chờ chấm',
+        href: '/admin',
+        tone: writingQueue ? 'warn' : 'ok',
+      }),
+      statTile({
+        value: t.error,
+        label: 'Cần kiểm tra tay',
+        href: '/lop/bai-nop?view=error',
+        tone: t.error ? 'danger' : 'ok',
+      }),
+      statTile({
+        value: t.approved,
+        label: 'Đã duyệt, chờ gửi',
+        href: '/lop/bai-nop?view=approved',
+        hint: t.approved ? 'Tự gửi trong vòng 1 giờ' : undefined,
+      }),
+    ),
+    h(
+      'div',
+      { class: 'cl-grid' },
+      h(
+        'div',
+        null,
+        h('h2', null, 'Sắp đến hạn'),
+        upcoming.length
+          ? h('div', { class: 'cl-assign-list' }, ...upcoming.map(assignmentCard))
+          : empty(
+              'Không có bài nào đến hạn trong 14 ngày tới.',
+              link('/lop/giao-bai', 'Giao bài mới'),
             ),
+        h('h2', null, 'Vừa hết hạn (7 ngày)'),
+        recent.length
+          ? h('div', { class: 'cl-assign-list' }, ...recent.map(assignmentCard))
+          : empty('Không có bài nào hết hạn trong 7 ngày qua.'),
+      ),
+      h(
+        'aside',
+        null,
+        healthCard(ov.health),
+        h('h2', null, 'Lớp của bạn'),
+        refreshClassesButton(reload),
+        h(
+          'ul',
+          { class: 'cl-class-list' },
+          ...ov.classes.map((c) =>
             h(
-              'aside',
+              'li',
               null,
-              healthCard(ov.health),
-              h('h2', null, 'Lớp của bạn'),
               h(
-                'ul',
-                { class: 'cl-class-list' },
-                ...ov.classes.map((c) =>
-                  h(
-                    'li',
-                    null,
-                    h(
-                      'div',
-                      null,
-                      h('b', null, c.name),
-                      h('span', { class: 'cl-muted' }, ` · ${c.students ?? 0} HS`),
-                    ),
-                    h(
-                      'div',
-                      { class: 'cl-links' },
-                      link(
-                        `/lop/ket-qua?tab=scores&courseId=${encodeURIComponent(c.id)}`,
-                        'Bảng điểm',
-                      ),
-                      c.hasPenaltyFile
-                        ? link(
-                            `/lop/ket-qua?tab=penalty&courseId=${encodeURIComponent(c.id)}`,
-                            'Phạt',
-                          )
-                        : null,
-                      c.link ? externalLink(c.link, 'Classroom ↗') : null,
-                    ),
-                  ),
+                'div',
+                null,
+                h('b', null, c.name),
+                h('span', { class: 'cl-muted' }, ` · ${c.students ?? 0} HS`),
+              ),
+              h(
+                'div',
+                { class: 'cl-links' },
+                link(`/lop/ket-qua?tab=scores&courseId=${encodeURIComponent(c.id)}`, 'Bảng điểm'),
+                c.hasPenaltyFile
+                  ? link(`/lop/ket-qua?tab=penalty&courseId=${encodeURIComponent(c.id)}`, 'Phạt')
+                  : null,
+                c.link ? externalLink(c.link, 'Classroom ↗') : null,
+              ),
+            ),
+          ),
+        ),
+        h('h2', null, 'Hoạt động gần đây'),
+        ov.log.length
+          ? h(
+              'ol',
+              { class: 'cl-log' },
+              ...ov.log.map((l) =>
+                h(
+                  'li',
+                  null,
+                  h('span', { class: 'cl-muted' }, viDateTime(l.at)),
+                  h('b', null, l.event),
+                  l.detail ? h('span', { class: 'cl-log-detail' }, l.detail) : null,
                 ),
               ),
-              h('h2', null, 'Hoạt động gần đây'),
-              ov.log.length
-                ? h(
-                    'ol',
-                    { class: 'cl-log' },
-                    ...ov.log.map((l) =>
-                      h(
-                        'li',
-                        null,
-                        h('span', { class: 'cl-muted' }, viDateTime(l.at)),
-                        h('b', null, l.event),
-                        l.detail ? h('span', { class: 'cl-log-detail' }, l.detail) : null,
-                      ),
-                    ),
-                  )
-                : h('p', { class: 'cl-muted' }, 'Chưa có hoạt động.'),
-            ),
-          ),
-        ];
-      },
-      'Đang tải dữ liệu lớp học…',
+            )
+          : h('p', { class: 'cl-muted' }, 'Chưa có hoạt động.'),
+      ),
     ),
-  );
+  ];
 }
