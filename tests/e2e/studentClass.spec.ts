@@ -14,6 +14,9 @@ test('admin moves a student to another class', async ({ page }) => {
     await page.request.get(`${API}/__test/login-link?email=admin@example.com`)
   ).json()) as { link: string };
   await page.goto(link);
+  // The admin now lands on the class overview ("Lớp học"); the Writing queue is one click away.
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/admin');
   await expect(page.getByRole('heading', { name: 'Scoring queue' })).toBeVisible();
 
   await page.goto('#/admin/students');

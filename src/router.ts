@@ -1,4 +1,5 @@
 // Hash router (#/path?query) so GitHub Pages needs no server rewrites.
+import { CLASSROOM_API_URL } from './config';
 import { getUser } from './session';
 
 export type Guard = 'public' | 'guest' | 'student' | 'admin' | 'user';
@@ -68,7 +69,8 @@ export function currentPath(): { path: string; query: URLSearchParams } {
 export function homeFor(): string {
   const user = getUser();
   if (!user) return '/login';
-  return user.role === 'admin' ? '/admin' : '/dashboard';
+  if (user.role === 'admin') return CLASSROOM_API_URL ? '/lop' : '/admin';
+  return '/dashboard';
 }
 
 let lastHash = location.hash;

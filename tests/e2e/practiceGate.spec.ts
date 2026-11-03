@@ -131,6 +131,9 @@ test('the result unlocks after the error practice, and the teacher sees it', asy
   // The teacher: the scored view shows the result was seen and the practice done.
   await page.getByRole('button', { name: 'Log out' }).click();
   await page.goto(await loginLink(page, 'admin@example.com'));
+  // The admin now lands on the class overview ("Lớp học"); the Writing queue is one click away.
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/admin');
   await expect(page.getByRole('heading', { name: 'Scoring queue' })).toBeVisible();
   await page.getByLabel('Status').selectOption({ label: 'Scored (edit a score)' });
   const scored = page.getByRole('row', { name: /Education · Agree or disagree/ });

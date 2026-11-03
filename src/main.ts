@@ -6,6 +6,8 @@ import { clearSession, getUser } from './session';
 import { authCallbackPage, loginPage, privacyPage, signupPage } from './pages/auth';
 import { routes as studentRoutes } from './pages/student/routes';
 import { routes as adminRoutes } from './pages/admin/routes';
+import { CLASSROOM_NAV, routes as classroomRoutes } from './pages/classroom/routes';
+import { classroomEnabled, setClassroomExpiredHandler } from './classroomApi';
 
 addRoutes([
   { pattern: '/login', guard: 'guest', title: 'Log in', render: loginPage },
@@ -14,6 +16,7 @@ addRoutes([
   { pattern: '/privacy', guard: 'public', title: 'Privacy notice', render: privacyPage },
   ...studentRoutes,
   ...adminRoutes,
+  ...(classroomEnabled() ? classroomRoutes : []),
 ]);
 
 const STUDENT_NAV: Array<[string, string]> = [
@@ -22,6 +25,7 @@ const STUDENT_NAV: Array<[string, string]> = [
   ['/new', 'Write'],
   ['/assigned', 'Assigned to me'],
   ['/topics', 'Topics'],
+  ...(classroomEnabled() ? ([['/lop-cua-em', 'Lớp học']] as Array<[string, string]>) : []),
   ['/settings', 'Settings'],
 ];
 
@@ -55,10 +59,28 @@ document.querySelector('.skip-link')?.addEventListener('click', (e) => {
 function renderHeader() {
   const user = getUser();
   const { path } = currentPath();
-  const items = user ? (user.role === 'admin' ? ADMIN_NAV : STUDENT_NAV) : [];
+  // The admin menu has two sections: the class system ("Lớp học") and the Writing site.
+  const inClassroom = path === '/lop' || path.startsWith('/lop/');
+  const items = user
+    ? user.role === 'admin'
+      ? classroomEnabled() && inClassroom
+        ? CLASSROOM_NAV
+        : ADMIN_NAV
+      : STUDENT_NAV
+    : [];
+  const sectors =
+    user?.role === 'admin' && classroomEnabled()
+      ? h(
+          'div',
+          { class: 'sector-switch', role: 'group', 'aria-label': 'Khu vực' },
+          h('a', { href: '#/lop', 'aria-current': inClassroom ? 'true' : null }, 'Lớp học'),
+          h('a', { href: '#/admin', 'aria-current': inClassroom ? null : 'true' }, 'Writing'),
+        )
+      : null;
   const navLink = ([href, label]: [string, string]) => {
     const current =
-      path === href || (href !== '/admin' && href !== '/new' && path.startsWith(`${href}/`));
+      path === href ||
+      (href !== '/admin' && href !== '/new' && href !== '/lop' && path.startsWith(`${href}/`));
     return h(
       'li',
       null,
@@ -83,6 +105,7 @@ function renderHeader() {
   const nav = h(
     'nav',
     { id: 'site-nav', 'aria-label': 'Main' },
+    sectors,
     h('ul', null, ...items.map(navLink)),
     user
       ? h(
@@ -123,6 +146,9 @@ function renderHeader() {
 }
 
 setSessionExpiredHandler(() => {
+  navigate('/login?expired=1');
+});
+setClassroomExpiredHandler(() => {
   navigate('/login?expired=1');
 });
 

@@ -81,6 +81,9 @@ test('admin scores two essays with one Claude batch, then sends and opens the ne
   }
 
   await page.goto(await loginLink(page, 'admin@example.com'));
+  // The admin now lands on the class overview ("Lớp học"); the Writing queue is one click away.
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/admin');
   await expect(page.getByRole('heading', { name: 'Scoring queue' })).toBeVisible();
   await page.getByText('Batch scoring with Claude (Task 2)').click();
   // Task 1 essays cannot join a batch.

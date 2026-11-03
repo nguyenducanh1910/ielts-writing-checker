@@ -28,7 +28,10 @@ export default defineConfig({
     {
       command: `npx vite --mode mock --port ${WEB_PORT} --strictPort`,
       url: `http://localhost:${WEB_PORT}/`,
-      env: { VITE_API_URL: `http://localhost:${API_PORT}/` },
+      env: {
+        VITE_API_URL: `http://localhost:${API_PORT}/`,
+        VITE_CLASSROOM_API_URL: `http://localhost:${API_PORT}/classroom`,
+      },
       reuseExistingServer: false,
       timeout: 60_000,
     },

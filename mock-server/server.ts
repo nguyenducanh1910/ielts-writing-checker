@@ -8,11 +8,13 @@ import { createCtx } from '../apps-script/src/context';
 import { runSetup } from '../apps-script/src/setup';
 import { runDailyJob, runHourlyJob } from '../apps-script/src/triggers';
 import { createMemoryServices, type MemoryServices } from '../apps-script/testing/memory';
+import { createClassroomMock } from './classroom';
 
 const PORT = Number(process.env.MOCK_API_PORT ?? 8787);
 const APP_URL = process.env.MOCK_APP_URL ?? 'http://localhost:5173/';
 
 let svc: MemoryServices = fresh();
+const classroomMock = createClassroomMock(() => svc);
 
 function fresh(): MemoryServices {
   const s = createMemoryServices({ APP_URL }, { realTime: true });
@@ -44,6 +46,9 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
     if (req.method === 'OPTIONS') return send(res, 204, null);
 
+    if (url.pathname === '/classroom' && req.method === 'POST') {
+      return send(res, 200, classroomMock.handle(await readBody(req)));
+    }
     if (url.pathname === '/' && req.method === 'POST') {
       // Like Apps Script, only text/plain bodies are expected (no preflight).
       const body = await readBody(req);
@@ -56,6 +61,7 @@ const server = createServer(async (req, res) => {
     // ---- Test helpers ----
     if (url.pathname === '/__test/reset') {
       svc = fresh();
+      classroomMock.reset();
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/__test/outbox') {
