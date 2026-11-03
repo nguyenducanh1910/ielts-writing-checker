@@ -343,6 +343,18 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
   const findSub = (id: unknown) =>
     state.subs.find((s) => s.id === id) ?? fail('not_found', 'Không tìm thấy bài nộp này.');
 
+  // A class created on Google Classroom that the system does not track yet.
+  let newClasses = [
+    {
+      id: 'c233',
+      name: 'K233 6.0 TC - BTVN',
+      section: 'Tối 4-6',
+      link: 'https://classroom.google.com/c/c233',
+      students: 12,
+    },
+  ];
+  const tracked: Array<(typeof CLASSES)[number]> = [];
+
   const clientErrors: Json[] = [];
   const uploaded: string[] = [];
   const health = () => ({
@@ -370,6 +382,39 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
       ),
     }),
     'student.progress': (p) => progress(String(p.email ?? ''), false),
+    'class.refresh': () => ({ added: [], newClasses }),
+    'class.ignore': (p) => {
+      newClasses = newClasses.filter((c) => c.id !== p.courseId);
+      return { ignored: true };
+    },
+    'class.track': (p) => {
+      const c =
+        newClasses.find((x) => x.id === p.courseId) ?? fail('not_found', 'Không tìm thấy lớp này.');
+      const n = Number(p.startLesson);
+      if (p.createPenalty && !(Number.isInteger(n) && n >= 1 && n <= 300))
+        fail('bad_request', 'Buổi bắt đầu phải là số từ 1 đến 300.');
+      newClasses = newClasses.filter((x) => x !== c);
+      tracked.push({
+        id: c.id,
+        name: c.name,
+        section: c.section,
+        link: c.link,
+        hasPenaltyFile: !!p.createPenalty,
+      });
+      const lines = [`Đã bắt đầu theo dõi "${c.name}".`];
+      if (p.createPenalty)
+        lines.push(
+          `Đã tạo file phạt "Check BTVN - K233 TC" (${c.students} HS, buổi: L${n} ${p.startType === 'LS' ? 'L + S' : 'R + W'}, …)`,
+        );
+      if (p.addToWriting)
+        lines.push(`Web Writing: đã tạo lớp "K233 6.0 TC", xếp ${c.students} HS vào lớp`);
+      return {
+        message: lines.join('\n'),
+        penaltyLink: p.createPenalty
+          ? 'https://docs.google.com/spreadsheets/d/new-penalty/edit'
+          : '',
+      };
+    },
     overview: () => {
       const now = Date.now();
       return {
@@ -377,7 +422,12 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
         version: CLASSROOM_VERSION,
         teacherName: 'Thầy Đức Anh',
         sheetUrl: 'https://docs.google.com/spreadsheets/d/mock/edit',
-        classes: CLASSES.map((c) => ({ ...c, students: NAMES[c.id].length })),
+        classes: [
+          ...CLASSES.map((c) => ({ ...c, students: NAMES[c.id].length })),
+          ...tracked.map((c) => ({ ...c, students: 12 })),
+        ],
+        newClasses,
+        templates: CLASSES.filter((c) => c.hasPenaltyFile).map((c) => ({ id: c.id, name: c.name })),
         todo: {
           review: counts(state.subs).review,
           approved: counts(state.subs).approved,
