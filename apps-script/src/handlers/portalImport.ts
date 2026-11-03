@@ -4,6 +4,9 @@
 //   A retried request with the same submissionId returns the essay created the first time.
 // - portal.signin: a one-time login link for a student signed in to the portal, so they open
 //   Harper without logging in again. Never for an admin account.
+// - portal.classes.ensure: a new Google Classroom class the teacher started tracking in the
+//   portal. Creates the class (or reuses one with the same label) and puts its students in it
+//   (only students without a class yet; never admins). Safe to repeat as students join.
 //
 // The portal's Apps Script sends the shared secret (Script Property PORTAL_SECRET here,
 // HARPER_SECRET in the portal). Browsers never see it.
@@ -12,7 +15,7 @@ import { checkImage } from '../../../shared/image';
 import { countWords } from '../../../shared/wordCount';
 import { categoryColumns, readCategory } from '../category';
 import { newToken, takeRate } from '../auth';
-import { adminTimezone, ApiError, appUrl, type Ctx } from '../context';
+import { adminTimezone, ApiError, appUrl, bool, type Ctx } from '../context';
 import { saveUploadedImage } from '../drive';
 import type { ActionDef } from '../router';
 import { Reader } from '../validate';
@@ -170,7 +173,68 @@ function importEssay(ctx: Ctx, payload: unknown) {
   return { essayId: submitted.id, duplicate: false, driveStatus: submitted.drive_sync_status };
 }
 
+/** Students sent per call (a big class plus room for retries). */
+const ENSURE_MAX_STUDENTS = 200;
+
+function ensureClass(ctx: Ctx, payload: unknown) {
+  const r = new Reader(payload);
+  checkSecret(ctx, r);
+  const label = r.str('label', { max: LIMITS.label, min: 1 });
+  const list = r.array('students', ENSURE_MAX_STUDENTS);
+  const students: Array<{ email: string; name: string }> = [];
+  list.forEach((item, i) => {
+    const sr = new Reader(item && typeof item === 'object' ? item : {});
+    const email = sr.email('email');
+    const name = sr.str('name', { max: LIMITS.name, min: 1 });
+    r.absorb(`students.${i}`, sr);
+    if (email && name) students.push({ email, name });
+  });
+  r.done();
+
+  let cls = ctx.db.findOne('Classes', (c) => c.label.trim().toLowerCase() === label.toLowerCase());
+  let created = false;
+  if (!cls) {
+    cls = ctx.db.insert('Classes', { id: ctx.svc.uuid(), label, active: true });
+    created = true;
+  } else if (!bool(cls.active)) {
+    ctx.db.update('Classes', (c) => c.id === cls!.id, { active: true });
+  }
+  const classId = cls.id;
+  let added = 0;
+  let kept = 0;
+  let skippedAdmins = 0;
+  for (const st of students) {
+    const user = ctx.db.findOne('Users', (u) => u.email.toLowerCase() === st.email);
+    if (user && user.role === 'admin') {
+      skippedAdmins++;
+      continue;
+    }
+    if (!user) {
+      ctx.db.insert('Users', {
+        id: ctx.svc.uuid(),
+        name: st.name,
+        email: st.email,
+        class: classId,
+        role: 'student',
+        target_band: '',
+        exam_date: '',
+        timezone: adminTimezone(ctx),
+        consent_at: '',
+        created_at: ctx.nowIso,
+      });
+      added++;
+    } else if (!user.class || !ctx.db.byId('Classes', user.class)) {
+      ctx.db.update('Users', (u) => u.id === user.id, { class: classId });
+      added++;
+    } else if (user.class !== classId) {
+      kept++; // already in another class: the teacher decides
+    }
+  }
+  return { classId, label: cls.label, created, added, keptInOtherClass: kept, skippedAdmins };
+}
+
 export const portalImportActions: Record<string, ActionDef> = {
   'portal.essays.import': { write: true, handler: (ctx, p) => importEssay(ctx, p) },
   'portal.signin': { write: true, handler: (ctx, p) => signIn(ctx, p) },
+  'portal.classes.ensure': { write: true, handler: (ctx, p) => ensureClass(ctx, p) },
 };
