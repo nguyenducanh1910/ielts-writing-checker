@@ -26,6 +26,7 @@ export const PUBLIC_ACTIONS = new Set([
   // Server-to-server from IELTS Harper Portal; checks its own shared secret.
   'portal.essays.import',
   'portal.signin',
+  'portal.classes.ensure',
 ]);
 
 /** Actions for any signed-in user (students and admins). */
