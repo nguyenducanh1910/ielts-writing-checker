@@ -3,6 +3,7 @@
 // Like the real one, it asks the Writing back end who the token belongs to (me.get).
 import { callApi } from '../apps-script/src/api';
 import type { MemoryServices } from '../apps-script/testing/memory';
+import { CLASSROOM_VERSION } from '../src/versions';
 
 type Json = Record<string, unknown>;
 type Envelope =
@@ -342,10 +343,38 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
   const findSub = (id: unknown) =>
     state.subs.find((s) => s.id === id) ?? fail('not_found', 'Không tìm thấy bài nộp này.');
 
+  const clientErrors: Json[] = [];
+  const uploaded: string[] = [];
+  const health = () => ({
+    checkedAt: new Date().toISOString(),
+    ok: clientErrors.length === 0,
+    problems: clientErrors.length
+      ? [`${clientErrors.length} lỗi hiển thị trên trang web trong 24 giờ qua.`]
+      : [],
+    notes: [],
+    versions: { site: null, writing: 'dev', classroom: CLASSROOM_VERSION },
+  });
+  const publicActions: Record<string, (p: Json) => unknown> = {
+    'system.version': () => ({ version: CLASSROOM_VERSION }),
+    'client.error': (p) => {
+      clientErrors.push(p);
+      return { logged: true };
+    },
+  };
+
   const teacher: Record<string, (p: Json) => unknown> = {
+    'system.health': () => health(),
+    'student.list': () => ({
+      students: CLASSES.flatMap((c) =>
+        NAMES[c.id].map(([name, email]) => ({ email, name, className: c.name })),
+      ),
+    }),
+    'student.progress': (p) => progress(String(p.email ?? ''), false),
     overview: () => {
       const now = Date.now();
       return {
+        health: health(),
+        version: CLASSROOM_VERSION,
         teacherName: 'Thầy Đức Anh',
         sheetUrl: 'https://docs.google.com/spreadsheets/d/mock/edit',
         classes: CLASSES.map((c) => ({ ...c, students: NAMES[c.id].length })),
@@ -471,6 +500,31 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
       }
       return { message, row: s };
     },
+    'submissions.feedback': (p) => {
+      const s = findSub(p.id);
+      if (!/^https:\/\/docs/.test(s.feedbackFile))
+        fail('not_found', 'Bài này chưa có file nhận xét.');
+      return {
+        text: `NHẬN XÉT SPEAKING – ${s.student}\nOverall band: ${s.band}\n\nFC 6.0 · LR 5.5 · GRA 5.5 · P 6.0\n\nYour response (transcript)\nI usually recycle plastic bottles at home…`,
+      };
+    },
+    'submissions.approveMany': (p) => {
+      const ids = Array.isArray(p.ids) ? p.ids.map(String) : [];
+      if (!ids.length) fail('bad_request', 'Chưa chọn bài nào.');
+      let n = 0;
+      state.subs.forEach((s) => {
+        if (!ids.includes(s.id) || s.gradeKind !== 'review' || s.sentAt) return;
+        s.approved = true;
+        s.gradeKind = p.sendNow === true ? 'sent' : 'approved';
+        if (p.sendNow === true) s.sentAt = new Date().toISOString();
+        n++;
+      });
+      return {
+        message: `Đã duyệt ${n} bài.${p.sendNow === true ? ` Đã gửi ${n} nhận xét.` : ''}`,
+        approved: n,
+        skipped: ids.length - n,
+      };
+    },
     'submissions.regrade': (p) => {
       const s = findSub(p.id);
       s.gradeKind = 'waiting';
@@ -505,11 +559,60 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
     'assign.check': (p) => {
       if (!/drive\.google\.com/.test(String(p.folder)))
         fail('bad_request', 'Không mở được thư mục Drive (link sai hoặc không có quyền)');
+      const listening = !String(p.type).startsWith('Reading');
+      const missingAudio = listening && !uploaded.includes(String(p.folder));
+      const questions = Array.from({ length: 8 }, (_, i) => ({
+        n: i + 1,
+        type: i < 6 ? 'text' : 'choice',
+        options: i < 6 ? [] : ['A', 'B', 'C', 'D', 'E'],
+        key: [
+          'supermarkets',
+          'colour (chấp nhận: color)',
+          'glue',
+          'flakes',
+          '70',
+          'local farmers',
+          'B',
+          'D',
+        ][i],
+        explained: i < 2 || i > 5,
+        level: i === 5 ? 'Khó' : 'Trung bình',
+        err: 'Mắc bẫy distractor',
+      }));
       return {
         summary: String(p.type).startsWith('Reading')
           ? 'Reading: 13 câu, đủ đáp án (1–5 Headings; 6–8 TRUE/FALSE/NOT GIVEN; 9–10 MCQ; 11–13 Completion)\nWriting: Task 2'
-          : 'Listening: 20 câu, đủ đáp án\nSpeaking: chấm từ file ghi âm',
-        warnings: [],
+          : 'Listening: 8 câu, đủ đáp án\nSpeaking: chấm từ file ghi âm',
+        warnings: missingAudio ? ['Listening: chưa có file nghe (mp3) trong thư mục'] : [],
+        preview: {
+          parts: [
+            {
+              name: listening ? 'Listening' : 'Reading',
+              total: 8,
+              groups: [
+                { a: 1, b: 6, label: 'Điền NO MORE THAN TWO WORDS AND/OR A NUMBER', pair: false },
+                { a: 7, b: 8, label: 'Chọn 2 chữ cái A–E (thứ tự bất kỳ)', pair: true },
+              ],
+              questions,
+              scale: ['7–8: Vững', '5–6: Đạt', '0–4: Cần ôn lại'],
+            },
+          ],
+          attachments: [
+            { name: `${listening ? 'Listening' : 'Reading'}.docx`, mode: 'Xem (tự chuyển PDF)' },
+          ],
+          writing: listening ? '' : 'Task 2: Opinion',
+          speaking: listening ? 'Có đề Speaking cho AI' : '',
+          missingAudio,
+        },
+      };
+    },
+    'assign.upload': (p) => {
+      if (!/^audio\//.test(String(p.mime))) fail('bad_request', 'Chỉ tải được file âm thanh.');
+      uploaded.push(String(p.folder));
+      return {
+        name: `Listening - ${String(p.name)}`,
+        size: 1000,
+        url: 'https://drive.google.com/file/d/up/view',
       };
     },
     'assign.create': (p) => {
@@ -595,6 +698,79 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
     },
   };
 
+  const progress = (email: string, sentOnly: boolean) => {
+    const mine = state.subs.filter((s) => s.email === email && (!sentOnly || s.sentAt));
+    if (!mine.length) return { matched: false, email };
+    const bandOf = (s: Sub) => {
+      if (s.band) return Number(s.band);
+      const m = /^(\d+)\/(\d+)$/.exec(s.score);
+      return m ? Math.round((4 + (Number(m[1]) / Number(m[2])) * 4.5) * 2) / 2 : null;
+    };
+    const points = mine
+      .filter((s) => bandOf(s) !== null)
+      .map((s) => ({
+        at: s.dueAt,
+        title: s.title,
+        skill: s.skill.replace(/ .*$/, ''),
+        band: bandOf(s)!,
+        score: s.score,
+      }))
+      .sort((a, b) => a.at.localeCompare(b.at));
+    const bySkill: Record<string, unknown> = {};
+    ['Reading', 'Listening', 'Writing', 'Speaking'].forEach((sk) => {
+      const xs = points.filter((p) => p.skill === sk);
+      if (!xs.length) return;
+      bySkill[sk] = {
+        count: xs.length,
+        latest: xs[xs.length - 1].band,
+        average: Math.round((xs.reduce((a, p) => a + p.band, 0) / xs.length) * 10) / 10,
+        change: xs[xs.length - 1].band - xs[0].band,
+      };
+    });
+    const rl = mine.filter((s) => /^(Reading|Listening)/.test(s.skill) && s.score);
+    const review = rl.flatMap((s) => [
+      {
+        courseWorkId: s.courseWorkId,
+        title: s.title,
+        skill: s.skill.replace(/ .*$/, ''),
+        q: 3,
+        given: 'glu',
+        key: 'glue (chấp nhận: the glue)',
+        err: 'Sai chính tả',
+        explanation: 'Giải thích: “…it also removes the glue that holds the labels on.”',
+        at: s.dueAt,
+      },
+      {
+        courseWorkId: s.courseWorkId,
+        title: s.title,
+        skill: s.skill.replace(/ .*$/, ''),
+        q: 7,
+        given: '',
+        key: 'B',
+        err: 'Không theo dõi việc đổi ý',
+        explanation: 'Cặp câu 7–8: đáp án B, D (thứ tự bất kỳ)',
+        at: s.dueAt,
+      },
+    ]);
+    return {
+      matched: true,
+      email,
+      name: mine[0].student,
+      className: mine[0].className,
+      points,
+      bySkill,
+      errors: rl.length
+        ? [
+            { label: 'Không theo dõi việc đổi ý', count: rl.length },
+            { label: 'Sai chính tả', count: Math.max(1, rl.length - 1) },
+          ]
+        : [],
+      wrongTotal: review.length,
+      answered: rl.length * 10,
+      review,
+    };
+  };
+
   const student = (email: string) => {
     const mine = state.subs.filter((s) => s.email === email);
     if (!mine.length) return { matched: false, email };
@@ -675,7 +851,10 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
   return {
     reset() {
       state = seed(Date.now());
+      clientErrors.length = 0;
+      uploaded.length = 0;
     },
+    clientErrors,
     handle(raw: string): Envelope {
       try {
         let body: Json;
@@ -686,10 +865,12 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
         }
         const action = String(body.action ?? '');
         const payload = (body.payload ?? {}) as Json;
-        if (!teacher[action] && action !== 'me.classroom')
+        if (publicActions[action]) return { ok: true, data: publicActions[action](payload) };
+        if (!teacher[action] && action !== 'me.classroom' && action !== 'me.progress')
           fail('bad_request', `Không có thao tác "${action}".`);
         const user = who(String(body.token ?? ''));
         if (action === 'me.classroom') return { ok: true, data: student(user.email) };
+        if (action === 'me.progress') return { ok: true, data: progress(user.email, true) };
         if (user.role !== 'admin') fail('forbidden', 'Chỉ giáo viên được dùng mục này.');
         return { ok: true, data: teacher[action](payload) };
       } catch (err) {
