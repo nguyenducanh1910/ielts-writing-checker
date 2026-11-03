@@ -1,7 +1,7 @@
 // Login (password, or an emailed link as a backup), sign up, the login-link callback and the privacy notice.
 import { api, ApiClientError } from '../api';
 import { h, replace } from '../dom';
-import { navigate, type RouteContext } from '../router';
+import { homeFor, navigate, type RouteContext } from '../router';
 import { setSession, type SessionUser } from '../session';
 import { getConfig } from '../state';
 import {
@@ -34,7 +34,7 @@ type LoginResponse = SessionResponse | { linkSent: true; email: string; knownAcc
 
 function enterSite(res: SessionResponse) {
   setSession(res.sessionToken, res.user);
-  navigate(res.user.role === 'admin' ? '/admin' : '/dashboard', { replace: true });
+  navigate(homeFor(), { replace: true });
 }
 
 function passwordInput(name: string, autocomplete: 'current-password' | 'new-password') {
@@ -247,7 +247,7 @@ export function authCallbackPage(ctx: RouteContext): Node {
   api<{ sessionToken: string; user: SessionUser }>('auth.exchange', { token }).then(
     (res) => {
       setSession(res.sessionToken, res.user);
-      const home = res.user.role === 'admin' ? '/admin' : '/dashboard';
+      const home = homeFor();
       const safeNext = res.user.role === 'student' && /^\/[A-Za-z0-9/_-]{0,100}$/.test(next);
       navigate(safeNext ? next : home, { replace: true });
     },
