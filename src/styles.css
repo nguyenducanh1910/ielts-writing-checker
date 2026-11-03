@@ -2563,3 +2563,24 @@ a.cl-stat:hover {
   margin-top: 8px;
   background: var(--surface);
 }
+
+/* Lớp học › Tổng quan: new Google Classroom classes waiting for confirmation */
+.cl-newclasses {
+  margin: 0 0 22px;
+}
+.cl-newclass {
+  border: 2px solid var(--primary);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--surface);
+}
+.cl-newclass-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+  margin: -6px 0 6px 26px;
+}
+.cl-newclass-fields[hidden] {
+  display: none;
+}
