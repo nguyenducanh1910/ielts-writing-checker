@@ -48,6 +48,20 @@ export function empty(text: string, ...actions: Child[]): HTMLElement {
   return h('div', { class: 'empty' }, h('p', null, text), ...actions);
 }
 
+let onRenderError: (err: unknown) => void = () => undefined;
+/** Called when a page fails to draw loaded data (main.ts sends it to the error log). */
+export function setRenderErrorHandler(fn: (err: unknown) => void) {
+  onRenderError = fn;
+}
+
+function renderFailure(err: unknown): Error {
+  const detail = err instanceof Error ? err.message : String(err);
+  return new Error(
+    `This page could not be displayed (${detail}). The teacher has been notified. ` +
+      'If it keeps happening, the server may be running an older version.',
+  );
+}
+
 /** Render loading → content or error (with retry) into a container. */
 export function async<T>(
   load: () => Promise<T>,
@@ -58,7 +72,15 @@ export function async<T>(
   const run = () => {
     replace(box, loading(loadingText));
     load().then(
-      (data) => replace(box, render(data, run)),
+      (data) => {
+        try {
+          replace(box, render(data, run));
+        } catch (err) {
+          // A page that cannot draw the server's answer must say so, never spin forever.
+          onRenderError(err);
+          replace(box, errorBox(renderFailure(err), run));
+        }
+      },
       (err) => replace(box, errorBox(err, run)),
     );
   };
