@@ -263,3 +263,26 @@ No service in the spec was replaced; everything runs on GitHub Pages, Apps Scrip
   teacher's preview never contains the image. The privacy notice says all this.
 - **`setup()` must be run once after this update** to add the five new columns. Until then the columns are missing,
   nothing is locked or recorded, and the site keeps working as before.
+
+## "Lớp học" section: the Google Classroom system inside this site (2026-11-03)
+
+- **One site, two sections.** The admin menu has a switch: **Lớp học** (class overview, submissions and Speaking
+  review, posting assignments, results and fines) and **Writing** (everything that was here before). The admin now
+  lands on the class overview; the Writing queue is one click away and its count is a tile on the overview.
+  Students get a **Lớp học** page with their own Classroom homework, results already emailed, and this month's fines.
+- **Data stays in the Classroom checker** (the teacher's Google Sheet + Apps Script). That script got a JSON web app
+  (`doPost`, Code.gs "WEB PORTAL API"); the front end calls it directly (`VITE_CLASSROOM_API_URL`, also on
+  script.google.com, so the CSP needs no change). This back end is unchanged.
+- **Who is calling is decided by this back end, never by the browser.** The browser sends only its session token; the
+  Classroom script asks this API (`me.get`) who owns it (cached 5 minutes) and uses the returned role and email.
+  Teacher actions need `role === 'admin'`. A student only ever gets rows whose Classroom email equals their login
+  email, and only scores/comments that were already emailed to them (`Đã gửi lúc` set).
+- **The section is hidden when `VITE_CLASSROOM_API_URL` is empty**, so the site works as before until it is set.
+- **UI language:** the new section is in Vietnamese (the teacher's and students' language; all class data, statuses
+  and emails are Vietnamese). The existing Writing pages stay in English.
+- **Penalty data is read straight from each class's penalty spreadsheet** (including cells the teacher edited by
+  hand), cached 5 minutes in the Classroom script.
+- **Audio files open in Google Drive** in a new tab: the CSP allows no frames, and the files stay private to the
+  teacher's account.
+- **Mock:** `mock-server/classroom.ts` follows the same contract with sample data at `/classroom` on the mock API port;
+  `tests/e2e/classroom.spec.ts` covers review/send, posting an assignment, and a student being refused teacher data.
