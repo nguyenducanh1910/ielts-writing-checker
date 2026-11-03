@@ -49,6 +49,7 @@ test('student and admin pages have no WCAG A/AA violations', async ({ page }) =>
     '/topics',
     '/settings',
     '/lop-cua-em',
+    '/lop-cua-em/tien-bo',
   ]) {
     await page.goto(`#${path}`);
     await check(page, path);
@@ -70,6 +71,8 @@ test('student and admin pages have no WCAG A/AA violations', async ({ page }) =>
     '/lop/ket-qua',
     '/lop/ket-qua?tab=scores',
     '/lop/ket-qua?tab=penalty',
+    '/lop/hoc-sinh',
+    '/lop/hoc-sinh?email=demo.binh@example.com',
   ]) {
     await page.goto(`#${path}`);
     await check(page, path);

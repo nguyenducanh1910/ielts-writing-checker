@@ -67,3 +67,103 @@ test('student sees only their own class page and no teacher pages', async ({ pag
   });
   expect(((await res.json()) as { error: { code: string } }).error.code).toBe('forbidden');
 });
+
+test('check shows a preview of the Form and uploads a missing audio file', async ({ page }) => {
+  await page.goto(await loginLink(page, 'admin@example.com'));
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/lop/giao-bai');
+  await expect(page.getByRole('link', { name: /Tải file mẫu Teacher's Book/ })).toBeVisible();
+  await page.getByLabel('Loại bài').selectOption('Listening + Speaking');
+  await page.getByLabel('Link thư mục Drive').fill('https://drive.google.com/drive/folders/L25');
+  await page.getByRole('button', { name: 'Kiểm tra trước' }).click();
+  const preview = page.getByTestId('assign-preview');
+  await expect(preview.getByText('Listening: 8 câu')).toBeVisible();
+  await expect(preview.getByRole('cell', { name: 'local farmers' })).toBeVisible();
+  await expect(preview.getByText(/cặp 7–8/).first()).toBeVisible();
+  const upload = page.getByTestId('audio-upload');
+  await expect(upload).toBeVisible();
+  await upload.getByLabel('Chọn file nghe').setInputFiles({
+    name: 'L25 part 2.mp3',
+    mimeType: 'audio/mpeg',
+    buffer: Buffer.from('ID3fake-mp3'),
+  });
+  await upload.getByRole('button', { name: 'Tải lên thư mục' }).click();
+  await expect(page.getByText(/Đã tải "Listening - L25 part 2\.mp3"/)).toBeVisible();
+  // Re-checked automatically: the folder now has its audio.
+  await expect(page.getByTestId('audio-upload')).toHaveCount(0);
+  await expect(page.getByText(/Thư mục hợp lệ/)).toBeVisible();
+});
+
+test('teacher approves several Speaking results at once', async ({ page }) => {
+  await page.goto(await loginLink(page, 'admin@example.com'));
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/lop/bai-nop?view=review');
+  const bulk = page.getByTestId('bulk');
+  await expect(bulk).toBeVisible();
+  const picks = page.locator('.cl-sub-pick');
+  const before = await picks.count();
+  expect(before).toBeGreaterThan(2);
+  await picks.nth(0).check();
+  await picks.nth(1).check();
+  await expect(bulk.getByText('2 bài được chọn')).toBeVisible();
+  await bulk.getByRole('button', { name: 'Duyệt các bài đã chọn' }).click();
+  await expect(page.getByText('Đã duyệt 2 bài.')).toBeVisible();
+  await expect(page.locator('.cl-sub-pick')).toHaveCount(before - 2);
+  // The AI draft opens inline.
+  const first = page.locator('.cl-sub').first();
+  await first.locator('.cl-sub-head').click();
+  await first.getByText(/Xem bản nháp chi tiết của AI/).click();
+  await expect(first.getByText(/Your response \(transcript\)/)).toBeVisible();
+});
+
+test('teacher sees one student’s progress; the student reviews wrong answers', async ({ page }) => {
+  await page.goto(await loginLink(page, 'admin@example.com'));
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.getByRole('link', { name: 'Học sinh', exact: true }).click();
+  await page.getByLabel('Học sinh').selectOption('demo.binh@example.com');
+  await expect(page.getByRole('heading', { name: 'Band theo thời gian' })).toBeVisible();
+  await expect(page.getByText('Không theo dõi việc đổi ý').first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Log out' }).click();
+  await page.goto(await loginLink(page, 'demo.binh@example.com'));
+  await page.getByRole('link', { name: 'Tiến bộ' }).click();
+  await expect(page.getByRole('heading', { name: 'Tiến bộ & ôn tập' })).toBeVisible();
+  const review = page.getByTestId('review');
+  const item = review.locator('.cl-review-item').first();
+  await expect(item.getByText('glue (chấp nhận: the glue)')).toBeHidden();
+  await item.getByRole('button', { name: 'Xem đáp án' }).click();
+  await expect(item.getByText('glue (chấp nhận: the glue)')).toBeVisible();
+});
+
+test('a page that cannot draw the server answer shows an error, not a spinner', async ({
+  page,
+}) => {
+  await page.route(`${MOCK_API}/classroom`, async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string };
+    if (body.action === 'overview')
+      return route.fulfill({ contentType: 'application/json', body: '{"ok":true,"data":{}}' });
+    return route.continue();
+  });
+  const reported = page.waitForRequest(
+    (r) => r.url().startsWith(`${MOCK_API}/classroom`) && /client\.error/.test(r.postData() ?? ''),
+  );
+  await page.goto(await loginLink(page, 'admin@example.com'));
+  await expect(page.getByText(/This page could not be displayed/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+  await reported;
+});
+
+test('the teacher is warned when a web app runs an older version', async ({ page }) => {
+  await page.route(`${MOCK_API}/`, async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string };
+    if (body.action !== 'config.get') return route.continue();
+    const res = await route.fetch();
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    json.data.serverVersion = 'old0000000';
+    return route.fulfill({ response: res, body: JSON.stringify(json) });
+  });
+  await page.goto(await loginLink(page, 'admin@example.com'));
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await expect(page.getByText(/đang chạy bản cũ \(máy chủ: old0000000/)).toBeVisible();
+  await expect(page.getByTestId('health')).toBeVisible();
+});
