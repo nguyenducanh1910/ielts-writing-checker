@@ -76,7 +76,7 @@ const mail: MailService = {
   send: (m) => {
     GmailApp.sendEmail(m.to, m.subject, m.text, {
       htmlBody: m.html,
-      name: 'IELTS Writing Checker',
+      name: 'IELTS Classroom Portal',
     });
   },
 };
