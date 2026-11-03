@@ -1,5 +1,6 @@
 // Public config, sign up, password and link login, sessions and the user's own account.
 import { LIMITS } from '../../../shared/constants';
+import { BACKEND_VERSION } from '../version';
 import {
   createSession,
   exchangeLoginToken,
@@ -51,6 +52,7 @@ function config(ctx: Ctx) {
     topics: ctx.db.find('Topics', (t) => bool(t.active)).map((t) => ({ id: t.id, label: t.label })),
     dailyCap: getNumberSetting(ctx, 'daily_submission_cap'),
     adminTimezone: adminTimezone(ctx),
+    serverVersion: BACKEND_VERSION,
   };
 }
 
