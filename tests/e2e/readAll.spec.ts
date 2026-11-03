@@ -50,6 +50,9 @@ test('the teacher reads every essay on one prompt on one page', async ({ page })
   }
 
   await page.goto(await loginLink(page, 'admin@example.com'));
+  // The admin now lands on the class overview ("Lớp học"); the Writing queue is one click away.
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/admin');
   await expect(page.getByRole('heading', { name: 'Scoring queue' })).toBeVisible();
   await page.getByLabel('Prompt').selectOption({ label: `${PROMPT} (2 essays)` });
   await page.getByRole('link', { name: 'Read all 2 essays' }).click();

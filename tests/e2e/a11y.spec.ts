@@ -48,6 +48,7 @@ test('student and admin pages have no WCAG A/AA violations', async ({ page }) =>
     '/assigned',
     '/topics',
     '/settings',
+    '/lop-cua-em',
   ]) {
     await page.goto(`#${path}`);
     await check(page, path);
@@ -61,6 +62,22 @@ test('student and admin pages have no WCAG A/AA violations', async ({ page }) =>
 
   await page.getByRole('button', { name: 'Log out' }).click();
   await login(page, 'admin@example.com');
+  await check(page, 'class overview');
+  for (const path of [
+    '/lop/bai-nop',
+    '/lop/bai-nop?view=error',
+    '/lop/giao-bai',
+    '/lop/ket-qua',
+    '/lop/ket-qua?tab=scores',
+    '/lop/ket-qua?tab=penalty',
+  ]) {
+    await page.goto(`#${path}`);
+    await check(page, path);
+  }
+  await page.goto('#/lop/bai-nop');
+  await page.locator('.cl-sub-head').first().click();
+  await check(page, 'submission detail');
+  await page.goto('#/admin');
   await check(page, 'queue');
   await page.getByRole('link', { name: 'Score' }).first().click();
   await check(page, 'scoring page');

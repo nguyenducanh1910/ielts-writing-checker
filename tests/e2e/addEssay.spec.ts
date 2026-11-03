@@ -13,6 +13,8 @@ test('admin adds an essay from a file for a new student', async ({ page }) => {
     await page.request.get(`${API}/__test/login-link?email=admin@example.com`)
   ).json()) as { link: string };
   await page.goto(link);
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/admin');
 
   await page.getByRole('link', { name: 'Add an essay' }).click();
   await expect(page.getByRole('heading', { name: 'Add an essay' })).toBeVisible();

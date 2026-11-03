@@ -70,6 +70,9 @@ test('student submits an essay; admin scores it with Claude and an external tool
     data: JSON.stringify({ action: 'auth.requestLink', payload: { email: 'admin@example.com' } }),
   });
   await openLoginLink(page, 'admin@example.com');
+  // The admin now lands on the class overview ("Lớp học"); the Writing queue is one click away.
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto('#/admin');
   await expect(page.getByRole('heading', { name: 'Scoring queue' })).toBeVisible();
   const row = page.getByRole('row', { name: /E2E Student/ });
   await expect(row).toBeVisible();
