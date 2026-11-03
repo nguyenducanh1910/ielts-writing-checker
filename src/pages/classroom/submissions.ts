@@ -81,6 +81,31 @@ const ICON: Record<string, string> = {
   error: '⚠️',
 };
 
+/** The AI feedback document (transcript, criteria, corrections) shown inline, loaded on open. */
+function aiDraft(sub: Submission): HTMLElement {
+  const body = h('div');
+  let loaded = false;
+  const box = h(
+    'details',
+    { class: 'cl-ai-draft' },
+    h('summary', null, 'Xem bản nháp chi tiết của AI (transcript, 4 tiêu chí, lỗi cần sửa)'),
+    body,
+  );
+  box.addEventListener('toggle', () => {
+    if (!box.open || loaded) return;
+    loaded = true;
+    replace(body, loading('Đang đọc file nhận xét…'));
+    classroom<{ text: string }>('submissions.feedback', { id: sub.id }).then(
+      (r) => replace(body, h('div', { class: 'cl-pre cl-ai-text' }, r.text || '(File trống)')),
+      (err) => {
+        loaded = false;
+        replace(body, errorBox(err));
+      },
+    );
+  });
+  return box;
+}
+
 function detail(sub: Submission, onChange: (s: Submission) => void): HTMLElement {
   const panel = h('div', { class: 'cl-detail' });
   const editable = !sub.sentAt && ['review', 'approved', 'graded'].includes(sub.gradeKind);
@@ -141,6 +166,7 @@ function detail(sub: Submission, onChange: (s: Submission) => void): HTMLElement
     sub.feedbackFile && !/#\/admin\/score/.test(sub.feedbackFile)
       ? h('p', null, externalLink(sub.feedbackFile, 'Mở file nhận xét chi tiết (AI) ↗'))
       : '',
+    isAI && /^https:\/\/docs\.google\.com\//.test(sub.feedbackFile) ? aiDraft(sub) : '',
   );
 
   const actions = h('div', { class: 'actions' });
@@ -214,8 +240,22 @@ function detail(sub: Submission, onChange: (s: Submission) => void): HTMLElement
   return panel;
 }
 
-function card(sub: Submission): HTMLElement {
+function card(sub: Submission, selected?: Set<string>, onSelect?: () => void): HTMLElement {
   const el = h('article', { class: 'cl-sub' });
+  const pick =
+    selected && sub.gradeKind === 'review' && !sub.sentAt
+      ? h('input', {
+          type: 'checkbox',
+          class: 'cl-sub-pick',
+          'aria-label': `Chọn bài của ${sub.student}`,
+          checked: selected.has(sub.id),
+        })
+      : null;
+  pick?.addEventListener('change', () => {
+    if (pick.checked) selected!.add(sub.id);
+    else selected!.delete(sub.id);
+    onSelect?.();
+  });
   const render = (s: Submission, open: boolean) => {
     const panelId = `sub-${s.id.replace(/[^\w-]/g, '_')}`;
     const toggle = h(
@@ -252,7 +292,7 @@ function card(sub: Submission): HTMLElement {
     const body = h('div', { id: panelId, hidden: !open });
     if (open) body.append(detail(s, (next) => render(next, true)));
     toggle.addEventListener('click', () => render(s, !open));
-    replace(el, toggle, body);
+    replace(el, pick ? h('div', { class: 'cl-sub-row' }, pick, toggle) : toggle, body);
   };
   render(sub, false);
   return el;
@@ -270,6 +310,83 @@ export function submissionsPage(ctx: RouteContext): Node {
     async(
       () => classroom<SubmissionList>('submissions.list', { view, ...filters }),
       (data, reload) => {
+        // Chọn nhiều bài "Chờ duyệt" để duyệt (và gửi) một lần
+        const selected = new Set<string>();
+        const reviewable = data.rows.filter((r) => r.gradeKind === 'review' && !r.sentAt);
+        const bulkCount = h('span', null, '0 bài được chọn');
+        const bulkApprove = h(
+          'button',
+          { type: 'button', class: 'btn', disabled: true },
+          'Duyệt các bài đã chọn',
+        );
+        const bulkSend = h(
+          'button',
+          { type: 'button', class: 'btn btn-primary', disabled: true },
+          'Duyệt & gửi ngay',
+        );
+        const pickAll = h('input', { type: 'checkbox', 'aria-label': 'Chọn tất cả bài chờ duyệt' });
+        const refresh = () => {
+          bulkCount.textContent = `${selected.size} bài được chọn`;
+          bulkApprove.disabled = bulkSend.disabled = selected.size === 0;
+          pickAll.checked = selected.size > 0 && selected.size === reviewable.length;
+        };
+        const list = h('div', { class: 'cl-sub-list' });
+        const drawList = () =>
+          replace(
+            list,
+            ...data.rows.map((r) => card(r, view === 'review' ? selected : undefined, refresh)),
+            data.total > data.rows.length
+              ? h(
+                  'p',
+                  { class: 'cl-muted' },
+                  `Đang hiện ${data.rows.length}/${data.total} bài. Lọc theo lớp hoặc bài để xem thêm.`,
+                )
+              : null,
+          );
+        pickAll.addEventListener('change', () => {
+          selected.clear();
+          if (pickAll.checked) reviewable.forEach((r) => selected.add(r.id));
+          drawList();
+          refresh();
+        });
+        const bulk = async (sendNow: boolean, btn: HTMLButtonElement) => {
+          if (sendNow) {
+            const ok = await confirmDialog({
+              title: `Gửi kết quả cho ${selected.size} học sinh?`,
+              message:
+                'Các bài được chọn sẽ được duyệt và gửi email ngay. Sau khi gửi không sửa được nữa.',
+              confirmLabel: 'Duyệt & gửi',
+              cancelLabel: 'Huỷ',
+            });
+            if (!ok) return;
+          }
+          await busy(btn, sendNow ? 'Đang gửi…' : 'Đang duyệt…', async () => {
+            try {
+              const r = await classroom<{ message: string }>('submissions.approveMany', {
+                ids: [...selected],
+                sendNow,
+              });
+              toast(r.message);
+              reload();
+            } catch (err) {
+              toast(err instanceof Error ? err.message : 'Lỗi', 'error');
+            }
+          });
+        };
+        bulkApprove.addEventListener('click', () => void bulk(false, bulkApprove));
+        bulkSend.addEventListener('click', () => void bulk(true, bulkSend));
+        const bulkBar =
+          view === 'review' && reviewable.length
+            ? h(
+                'div',
+                { class: 'cl-bulk', 'data-testid': 'bulk' },
+                h('label', { class: 'cl-check' }, pickAll, ' Chọn tất cả'),
+                bulkCount,
+                bulkApprove,
+                bulkSend,
+              )
+            : null;
+        drawList();
         const sendAll = h(
           'button',
           { type: 'button', class: 'btn btn-primary', hidden: !data.counts.approved },
@@ -346,19 +463,9 @@ export function submissionsPage(ctx: RouteContext): Node {
             field({ label: 'Bài tập', control: cwSel }),
             field({ label: 'Tìm học sinh', control: search }),
           ),
+          bulkBar,
           data.rows.length
-            ? h(
-                'div',
-                { class: 'cl-sub-list' },
-                ...data.rows.map(card),
-                data.total > data.rows.length
-                  ? h(
-                      'p',
-                      { class: 'cl-muted' },
-                      `Đang hiện ${data.rows.length}/${data.total} bài. Lọc theo lớp hoặc bài để xem thêm.`,
-                    )
-                  : null,
-              )
+            ? list
             : empty(
                 view === 'review'
                   ? 'Không có bài nào chờ duyệt.'

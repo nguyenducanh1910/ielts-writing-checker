@@ -12,7 +12,8 @@ import {
   selectEl,
   toast,
 } from '../../ui/components';
-import type { AssignOptions, AssignRow } from './types';
+import { audioUpload, previewView } from './assignPreview';
+import type { AssignCheck, AssignOptions, AssignRow } from './types';
 import { externalLink, pageHeader, viDateTime } from './ui';
 
 function statusBadge(status: string): HTMLElement {
@@ -144,31 +145,32 @@ export function assignPage(): Node {
         };
         const check = h('button', { type: 'button', class: 'btn' }, 'Kiểm tra trước');
         const create = h('button', { type: 'button', class: 'btn btn-primary' }, 'Giao bài');
-        check.addEventListener('click', () => {
+        const runCheck = () => {
           const msg = valid();
           if (msg) return replace(result, notice('warning', msg));
           void busy(check, 'Đang đọc thư mục…', async () => {
             try {
-              const r = await classroom<{ summary: string; warnings: string[] }>(
-                'assign.check',
-                payload(),
+              const r = await classroom<AssignCheck>('assign.check', payload());
+              const warnings = r.warnings.filter(
+                (w) => !(r.preview?.missingAudio && /chưa có file nghe/i.test(w)),
               );
               replace(
                 result,
                 notice(
-                  r.warnings.length ? 'warning' : 'success',
+                  warnings.length || r.preview?.missingAudio ? 'warning' : 'success',
                   h('b', null, 'Thư mục hợp lệ. '),
                   h('pre', { class: 'cl-pre' }, r.summary),
-                  r.warnings.length
-                    ? h('ul', null, ...r.warnings.map((w) => h('li', null, w)))
-                    : null,
+                  warnings.length ? h('ul', null, ...warnings.map((w) => h('li', null, w))) : null,
+                  r.preview?.missingAudio ? audioUpload(folder.value.trim(), runCheck) : null,
                 ),
+                r.preview ? previewView(r.preview) : null,
               );
             } catch (err) {
               replace(result, errorBox(err));
             }
           });
-        });
+        };
+        check.addEventListener('click', runCheck);
         create.addEventListener('click', async () => {
           const msg = valid();
           if (msg) return replace(result, notice('warning', msg));
@@ -239,6 +241,16 @@ export function assignPage(): Node {
                 control: folder,
                 hint: "Thư mục chứa đề Word/PDF, file nghe, Teacher's Book. Tên file cần có chữ Reading / Listening / Writing / Speaking.",
               }),
+              h(
+                'p',
+                { class: 'hint' },
+                h(
+                  'a',
+                  { href: './templates/TeacherBook-mau.docx', download: 'TeacherBook-mau.docx' },
+                  "Tải file mẫu Teacher's Book (Word)",
+                ),
+                ' — soạn theo mẫu này thì hệ thống đọc được đủ đáp án, giải thích, độ khó và thang đánh giá.',
+              ),
               field({ label: 'Ghi chú thêm cho học sinh', control: note }),
               h(
                 'label',

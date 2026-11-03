@@ -1,7 +1,7 @@
 // Student › Lớp học của em: own Classroom homework, results already emailed, and this month's fines.
 import { classroom } from '../../classroomApi';
 import { h } from '../../dom';
-import { async, empty, notice } from '../../ui/components';
+import { async, empty, link, notice } from '../../ui/components';
 import type { StudentAssignment, StudentClassroom } from './types';
 import {
   dueText,
@@ -122,7 +122,11 @@ export function studentClassroomPage(): Node {
           .filter(([, v]) => v !== null)
           .map(([k, v]) => statTile({ value: v!.toFixed(1), label: `Band TB ${k}` }));
         return [
-          pageHeader(`Lớp học của em`, `${d.name} · ${(d.classes ?? []).join(', ')}`),
+          pageHeader(
+            `Lớp học của em`,
+            `${d.name} · ${(d.classes ?? []).join(', ')}`,
+            link('/lop-cua-em/tien-bo', 'Tiến bộ & ôn câu sai', { class: 'btn' }),
+          ),
           h(
             'div',
             { class: 'cl-stats' },

@@ -1,10 +1,10 @@
 // Lớp học › Tổng quan: what needs the teacher today, assignments around now, classes, recent activity.
 import { api } from '../../api';
 import { classroom } from '../../classroomApi';
-import { h } from '../../dom';
-import { async, empty, link } from '../../ui/components';
+import { h, replace } from '../../dom';
+import { async, busy, empty, errorBox, link } from '../../ui/components';
 import type { QueueResponse } from '../admin/types';
-import type { Overview, OverviewAssignment } from './types';
+import type { Health, Overview, OverviewAssignment } from './types';
 import { dueText, externalLink, pageHeader, progress, statTile, viDateTime } from './ui';
 
 async function load() {
@@ -65,6 +65,50 @@ function assignmentCard(a: OverviewAssignment): HTMLElement {
       link(`/lop/bai-nop?view=all&courseWorkId=${encodeURIComponent(a.id)}`, 'Xem bài nộp'),
       a.link ? externalLink(a.link, 'Mở trên Classroom ↗') : null,
     ),
+  );
+}
+
+/** "Hệ thống": result of the daily health check, with a button to run it now. */
+export function healthCard(initial: Health | null | undefined): HTMLElement {
+  const body = h('div');
+  const show = (x: Health | null | undefined) =>
+    replace(
+      body,
+      !x
+        ? h('p', { class: 'cl-muted' }, 'Chưa kiểm tra lần nào (tự chạy cùng báo cáo ngày).')
+        : x.ok
+          ? h(
+              'p',
+              { class: 'cl-ok' },
+              `✓ Mọi thứ bình thường · kiểm tra ${viDateTime(x.checkedAt)}`,
+            )
+          : [
+              h(
+                'p',
+                { class: 'cl-danger' },
+                h('b', null, `Cần xử lý · kiểm tra ${viDateTime(x.checkedAt)}`),
+              ),
+              h('ul', { class: 'cl-health-list' }, ...x.problems.map((p) => h('li', null, p))),
+            ],
+      x?.notes.length ? h('p', { class: 'cl-muted' }, x.notes.join(' ')) : null,
+    );
+  show(initial);
+  const btn = h('button', { type: 'button', class: 'btn btn-small' }, 'Kiểm tra ngay');
+  btn.addEventListener('click', () =>
+    busy(btn, 'Đang kiểm tra…', async () => {
+      try {
+        show(await classroom<Health>('system.health'));
+      } catch (err) {
+        replace(body, errorBox(err));
+      }
+    }),
+  );
+  return h(
+    'div',
+    { class: 'cl-health', 'data-testid': 'health' },
+    h('h2', null, 'Hệ thống'),
+    body,
+    btn,
   );
 }
 
@@ -140,6 +184,7 @@ export function overviewPage(): Node {
             h(
               'aside',
               null,
+              healthCard(ov.health),
               h('h2', null, 'Lớp của bạn'),
               h(
                 'ul',
