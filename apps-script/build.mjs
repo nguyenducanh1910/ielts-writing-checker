@@ -6,6 +6,7 @@ import { build } from 'esbuild';
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { backendVersion } from '../scripts/backend-version.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'dist');
@@ -27,8 +28,9 @@ await build({
   outfile: join(outDir, 'Code.js'),
   footer: { js: `\n${footer}\n` },
   legalComments: 'none',
+  define: { __BACKEND_VERSION__: JSON.stringify(backendVersion()) },
   logLevel: 'info',
 });
 
 copyFileSync(join(here, 'appsscript.json'), join(outDir, 'appsscript.json'));
-console.log('Apps Script bundle written to apps-script/dist');
+console.log(`Apps Script bundle written to apps-script/dist (version ${backendVersion()})`);
