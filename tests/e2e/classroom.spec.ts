@@ -167,3 +167,25 @@ test('the teacher is warned when a web app runs an older version', async ({ page
   await expect(page.getByText(/đang chạy bản cũ \(máy chủ: old0000000/)).toBeVisible();
   await expect(page.getByTestId('health')).toBeVisible();
 });
+
+test('a new Google Classroom class is set up like the others after the teacher confirms', async ({
+  page,
+}) => {
+  await page.goto(await loginLink(page, 'admin@example.com'));
+  const card = page.getByTestId('new-class');
+  await expect(card.getByRole('heading', { name: 'K233 6.0 TC - BTVN' })).toBeVisible();
+  await expect(card.getByLabel('Lớp mẫu')).toHaveValue('c230');
+  await card.getByLabel('Buổi đầu tiên (số buổi Lxx)').fill('0');
+  await card.getByRole('button', { name: 'Bắt đầu theo dõi' }).click();
+  await expect(card.getByText('Buổi đầu tiên phải là số từ 1 đến 300.')).toBeVisible();
+  await card.getByLabel('Buổi đầu tiên (số buổi Lxx)').fill('5');
+  await card.getByLabel('Buổi đầu là').selectOption('LS');
+  await card.getByRole('button', { name: 'Bắt đầu theo dõi' }).click();
+  await expect(card.getByText(/buổi: L5 L \+ S/)).toBeVisible();
+  await expect(card.getByText(/Web Writing: đã tạo lớp "K233 6.0 TC"/)).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Mở file phạt ↗' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Bỏ qua' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Kiểm tra lớp mới' }).click();
+  await expect(page.getByText('Không có lớp mới.')).toBeVisible();
+});
