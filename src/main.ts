@@ -8,6 +8,11 @@ import { routes as studentRoutes } from './pages/student/routes';
 import { routes as adminRoutes } from './pages/admin/routes';
 import { CLASSROOM_NAV, routes as classroomRoutes } from './pages/classroom/routes';
 import { classroomEnabled, setClassroomExpiredHandler } from './classroomApi';
+import { installErrorReporting, reportClientError, showVersionStatus } from './health';
+import { setRenderErrorHandler } from './ui/components';
+
+installErrorReporting();
+setRenderErrorHandler((err) => reportClientError(err, 'render'));
 
 addRoutes([
   { pattern: '/login', guard: 'guest', title: 'Log in', render: loginPage },
@@ -25,7 +30,12 @@ const STUDENT_NAV: Array<[string, string]> = [
   ['/new', 'Write'],
   ['/assigned', 'Assigned to me'],
   ['/topics', 'Topics'],
-  ...(classroomEnabled() ? ([['/lop-cua-em', 'Lớp học']] as Array<[string, string]>) : []),
+  ...(classroomEnabled()
+    ? ([
+        ['/lop-cua-em', 'Lớp học'],
+        ['/lop-cua-em/tien-bo', 'Tiến bộ'],
+      ] as Array<[string, string]>)
+    : []),
   ['/settings', 'Settings'],
 ];
 
@@ -42,12 +52,16 @@ const ADMIN_NAV: Array<[string, string]> = [
 const app = document.getElementById('app')!;
 const header = h('header', { class: 'site-header' });
 const main = h('main', { id: 'main', tabindex: '-1' });
+const versionSlot = h('div', { class: 'version-slot' });
+const versionText = h('span', { class: 'version-line' });
 const footer = h(
   'footer',
   { class: 'site-footer' },
   h('a', { href: '#/privacy' }, 'Privacy notice'),
+  ' ',
+  versionText,
 );
-app.append(header, main, footer);
+app.append(header, versionSlot, main, footer);
 
 // The skip link must not change the URL hash (the hash is the router's path).
 document.querySelector('.skip-link')?.addEventListener('click', (e) => {
@@ -80,7 +94,11 @@ function renderHeader() {
   const navLink = ([href, label]: [string, string]) => {
     const current =
       path === href ||
-      (href !== '/admin' && href !== '/new' && href !== '/lop' && path.startsWith(`${href}/`));
+      (href !== '/admin' &&
+        href !== '/new' &&
+        href !== '/lop' &&
+        href !== '/lop-cua-em' &&
+        path.startsWith(`${href}/`));
     return h(
       'li',
       null,
@@ -154,6 +172,7 @@ setClassroomExpiredHandler(() => {
 
 startRouter((node, title) => {
   renderHeader();
+  showVersionStatus(getUser()?.role === 'admin', versionSlot, versionText);
   replace(main, node);
   document.title = `${title} · IELTS Classroom Portal`;
   const heading = main.querySelector<HTMLElement>('h1');

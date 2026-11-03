@@ -2418,3 +2418,148 @@ a.cl-stat:hover {
     grid-column: auto;
   }
 }
+
+/* Deployment out of date (admins only) */
+.version-slot:empty {
+  display: none;
+}
+.version-slot .version-alert {
+  max-width: 1100px;
+  margin: 12px auto 0;
+}
+.version-alert ul {
+  margin: 4px 0 8px 18px;
+}
+.version-line:not(:empty)::before {
+  content: '· ';
+}
+.version-line {
+  font-size: 0.8rem;
+}
+
+/* Lớp học › Tổng quan: health card */
+.cl-health {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px 14px 14px;
+  margin-bottom: 18px;
+  background: var(--surface);
+}
+.cl-health-list {
+  margin: 4px 0 10px 18px;
+  font-size: 0.92rem;
+}
+
+/* Lớp học › Giao bài: preview and audio upload */
+.cl-preview {
+  margin-top: 16px;
+}
+.cl-preview-part {
+  margin: 8px 0 14px;
+}
+.cl-preview-part summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.cl-upload {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.cl-upload .actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Lớp học › Tiến bộ & ôn tập */
+.cl-err-bars {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.cl-err-bars li {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) 2fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 0;
+}
+.cl-err-bar {
+  background: var(--border);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+.cl-err-bar span {
+  display: block;
+  height: 100%;
+  background: #b45309;
+}
+.cl-review-group ul {
+  list-style: none;
+  padding: 0;
+}
+.cl-review-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  background: var(--surface);
+}
+.cl-review-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.cl-review-head .btn {
+  margin-left: auto;
+}
+.cl-review-answer {
+  margin-top: 8px;
+}
+
+/* Lớp học › Bài nộp: bulk approve, AI draft */
+.cl-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+}
+.cl-sub-row {
+  display: flex;
+  align-items: stretch;
+}
+.cl-sub-row .cl-sub-head {
+  flex: 1;
+}
+.cl-sub-pick {
+  margin: 0 10px 0 12px;
+  width: 18px;
+  height: 18px;
+  align-self: center;
+}
+.cl-ai-draft {
+  margin: 8px 0 12px;
+}
+.cl-ai-draft summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.cl-ai-text {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  background: var(--surface);
+}

@@ -12,6 +12,8 @@ export interface AppConfig {
   topics: Option[];
   dailyCap: number;
   adminTimezone: string;
+  /** Hash of the back-end source the deployed web app runs (older deployments: absent). */
+  serverVersion?: string;
 }
 
 export interface ScoreView {
