@@ -206,3 +206,51 @@ describe('practice time from the portal', () => {
     });
   });
 });
+
+describe('classes created from IELTS Harper Portal', () => {
+  it('creates the class once and puts students without a class in it', () => {
+    const { app, admin } = setup();
+    const students = [
+      { email: 'new.one@example.com', name: 'Nguyen Van Mot' },
+      { email: 'admin@example.com', name: 'Teacher' },
+    ];
+    const first = app.call('portal.classes.ensure', { secret: SECRET, label: 'K233 TC', students });
+    expect(first).toMatchObject({ created: true, added: 1, skippedAdmins: 1 });
+    const again = app.call('portal.classes.ensure', {
+      secret: SECRET,
+      label: 'k233 tc',
+      students: [...students, { email: 'NEW.two@example.com', name: 'Tran Thi Hai' }],
+    });
+    expect(again).toMatchObject({ classId: first.classId, created: false, added: 1 });
+    const one = app.db().findOne('Users', (u) => u.email === 'new.one@example.com')!;
+    const two = app.db().findOne('Users', (u) => u.email === 'new.two@example.com')!;
+    expect(one).toMatchObject({ class: first.classId, role: 'student' });
+    expect(two.class).toBe(first.classId);
+    expect(app.db().find('Classes', (c) => c.label.toLowerCase() === 'k233 tc')).toHaveLength(1);
+    const lists = app.call('admin.lists', {}, admin);
+    expect(lists.classes.some((c: any) => c.label === 'K233 TC' && c.active)).toBe(true);
+  });
+
+  it('leaves a student already in another class where they are', () => {
+    const { app } = setup();
+    const a = app.call('portal.classes.ensure', {
+      secret: SECRET,
+      label: 'Class A',
+      students: [{ email: 's@example.com', name: 'Student S' }],
+    });
+    const b = app.call('portal.classes.ensure', {
+      secret: SECRET,
+      label: 'Class B',
+      students: [{ email: 's@example.com', name: 'Student S' }],
+    });
+    expect(b).toMatchObject({ added: 0, keptInOtherClass: 1 });
+    expect(app.db().findOne('Users', (u) => u.email === 's@example.com')!.class).toBe(a.classId);
+  });
+
+  it('refuses a wrong secret', () => {
+    const { app } = setup();
+    expect(
+      app.raw('portal.classes.ensure', { secret: 'nope', label: 'X', students: [] }),
+    ).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+  });
+});
