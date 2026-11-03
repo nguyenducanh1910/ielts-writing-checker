@@ -130,7 +130,7 @@ function renderHeader() {
       'a',
       { class: 'brand', href: '#/' },
       h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, 'A'),
-      'IELTS Writing Checker',
+      'IELTS Classroom Portal',
     ),
     user ? toggle : null,
     user
@@ -155,7 +155,7 @@ setClassroomExpiredHandler(() => {
 startRouter((node, title) => {
   renderHeader();
   replace(main, node);
-  document.title = `${title} · IELTS Writing Checker`;
+  document.title = `${title} · IELTS Classroom Portal`;
   const heading = main.querySelector<HTMLElement>('h1');
   (heading ?? main).focus({ preventScroll: false });
   window.scrollTo(0, 0);
