@@ -53,7 +53,7 @@ export function claudeSetupPage(): Node {
             h(
               'li',
               null,
-              'In Claude.ai, create a Project (for example “IELTS Writing Checker Scoring”).',
+              'In Claude.ai, create a Project (for example “IELTS Classroom Portal Scoring”).',
             ),
             h('li', null, 'Paste the instructions below into the Project instructions.'),
             h(
