@@ -34,6 +34,21 @@ export interface Overview {
   todo: { review: number; approved: number; error: number; web: number };
   assignments: OverviewAssignment[];
   log: Array<{ at: string; event: string; detail: string }>;
+  /** Last daily health check (null: never ran). */
+  health?: Health | null;
+  version?: string;
+}
+
+export interface Health {
+  checkedAt: string;
+  ok: boolean;
+  problems: string[];
+  notes: string[];
+  versions?: {
+    site: { backend?: string; classroom?: string } | null;
+    writing: string | null;
+    classroom: string;
+  };
 }
 
 export interface Submission {
@@ -85,6 +100,36 @@ export interface AssignOptions {
   classes: ClassInfo[];
   types: string[];
   timeZone: string;
+}
+
+export interface PreviewQuestion {
+  n: number;
+  type: string;
+  options: string[];
+  key: string;
+  explained: boolean;
+  level: string;
+  err: string;
+}
+
+export interface AssignPreview {
+  parts: Array<{
+    name: string;
+    total: number;
+    groups: Array<{ a: number; b: number; label: string; pair: boolean }>;
+    questions: PreviewQuestion[];
+    scale: string[];
+  }>;
+  attachments: Array<{ name: string; mode: string }>;
+  writing: string;
+  speaking: string;
+  missingAudio: boolean;
+}
+
+export interface AssignCheck {
+  summary: string;
+  warnings: string[];
+  preview?: AssignPreview;
 }
 
 export interface AssignRow {
@@ -210,4 +255,43 @@ export interface StudentClassroom {
     weeks: Record<string, number>;
     items: Array<{ session: string; week: string; skill: string; value: string }>;
   }>;
+}
+
+export interface ProgressPoint {
+  at: string;
+  title: string;
+  skill: 'Reading' | 'Listening' | 'Writing' | 'Speaking';
+  band: number;
+  score: string;
+}
+
+export interface ReviewItem {
+  courseWorkId: string;
+  title: string;
+  skill: string;
+  q: number;
+  given: string;
+  key: string;
+  err: string;
+  explanation: string;
+  at: string;
+}
+
+export interface Progress {
+  matched: boolean;
+  email: string;
+  name?: string;
+  className?: string;
+  points?: ProgressPoint[];
+  bySkill?: Record<string, { count: number; latest: number; average: number; change: number }>;
+  errors?: Array<{ label: string; count: number }>;
+  wrongTotal?: number;
+  answered?: number;
+  review?: ReviewItem[];
+}
+
+export interface StudentListItem {
+  email: string;
+  name: string;
+  className: string;
 }
