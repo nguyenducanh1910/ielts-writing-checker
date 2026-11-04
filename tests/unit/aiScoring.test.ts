@@ -80,6 +80,17 @@ function prepare() {
 }
 
 describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
+  it('explains a missing UrlFetch permission instead of a generic server error', () => {
+    const { app, admin } = prepare();
+    app.call('admin.ai.saveSettings', { geminiKey: KEY }, admin);
+    app.svc.http.handler = () => {
+      throw new Error('You do not have permission to call UrlFetchApp.fetchAll.');
+    };
+    const r = app.call('admin.ai.test', {}, admin);
+    expect(r.gemini.ok).toBe(false);
+    expect(r.gemini.message).toContain('cấp quyền');
+  });
+
   it('accepts keys with dots or pasted line breaks and names a bad key field', () => {
     const { app, admin } = prepare();
     const bad = app.raw('admin.ai.saveSettings', { geminiKey: 'short key!' }, admin);
