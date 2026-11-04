@@ -3,7 +3,12 @@
 // results. Here: the prompts, the choice of calibration samples and reading Gemini's answers.
 // Pure functions, unit tested; the back end (apps-script/src/aiScoring.ts) sends the requests.
 import { formatBand } from './band';
-import { CLAUDE_JSON_EXAMPLE, claudeProjectInstructions, type ClaudeDraft } from './claude';
+import {
+  CLAUDE_JSON_EXAMPLE,
+  claudeProjectInstructions,
+  type ClaudeDraft,
+  parseJsonLoosely,
+} from './claude';
 import { CRITERIA, criterionLabel, TASK_TYPE_LABELS, type TaskType } from './constants';
 
 /** Free tier: flash is the model the class system already uses; the teacher may try gemini-pro-latest. */
@@ -278,12 +283,8 @@ Answer with ONLY this JSON object:
  * json code block (the format parseReconcileReply and the scoring page already read).
  */
 export function geminiReconcileText(answer: string): { text: string; resultJson: string } | null {
-  let data: unknown;
-  try {
-    data = JSON.parse(answer.trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
-  } catch {
-    return null;
-  }
+  let data = parseJsonLoosely(answer);
+  if (Array.isArray(data) && data.length === 1) data = data[0] as unknown;
   if (typeof data !== 'object' || data === null) return null;
   const { notes, result } = data as { notes?: unknown; result?: unknown };
   if (typeof result !== 'object' || result === null) return null;

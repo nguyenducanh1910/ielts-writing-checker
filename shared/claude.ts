@@ -252,6 +252,55 @@ export function stripCodeFences(text: string): string {
   return t;
 }
 
+/**
+ * JSON from a chat reply: plain, inside code fences, surrounded by a sentence, or with the
+ * usual model slips (raw line breaks inside strings, trailing commas). undefined: not JSON.
+ */
+export function parseJsonLoosely(text: string): unknown {
+  const cleaned = stripCodeFences(text);
+  const first = cleaned.search(/[[{]/);
+  const last = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+  const candidates = [cleaned];
+  if (first !== -1 && last > first) candidates.push(cleaned.slice(first, last + 1));
+  const open = cleaned.indexOf('{');
+  const close = cleaned.lastIndexOf('}');
+  if (open !== -1 && close > open) candidates.push(cleaned.slice(open, close + 1));
+  for (const c of candidates) {
+    for (const t of [c, repairJson(c)]) {
+      try {
+        return JSON.parse(t) as unknown;
+      } catch {
+        // try the next form
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Escape control characters inside strings and drop trailing commas. */
+export function repairJson(text: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      else if (ch === '\n') {
+        out += '\\n';
+        continue;
+      } else if (ch === '\r') continue;
+      else if (ch === '\t') {
+        out += '\\t';
+        continue;
+      }
+    } else if (ch === '"') inString = true;
+    out += ch;
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -266,24 +315,15 @@ export function parseClaudeReply(text: string): ParseResult {
   const errors: string[] = [];
   if (!text || !text.trim()) return { ok: false, errors: ['The reply is empty.'] };
   if (text.length > LIMITS.rawText) return { ok: false, errors: ['The reply is too long.'] };
-  const cleaned = stripCodeFences(text);
-  let data: unknown;
-  try {
-    data = JSON.parse(cleaned);
-  } catch {
-    // Claude sometimes adds a sentence around the JSON; try the outermost object.
-    const first = cleaned.indexOf('{');
-    const last = cleaned.lastIndexOf('}');
-    try {
-      if (first === -1 || last <= first) throw new Error('no object');
-      data = JSON.parse(cleaned.slice(first, last + 1));
-    } catch {
-      return {
-        ok: false,
-        errors: ['The reply is not valid JSON. Ask Claude to answer only with the JSON object.'],
-      };
-    }
+  let data = parseJsonLoosely(text);
+  if (data === undefined) {
+    return {
+      ok: false,
+      errors: ['The reply is not valid JSON. Ask Claude to answer only with the JSON object.'],
+    };
   }
+  // Some models wrap the object in an array.
+  if (Array.isArray(data) && data.length === 1) data = data[0];
   if (!isObj(data)) return { ok: false, errors: ['The reply must be a JSON object.'] };
 
   const scores = {} as Record<Criterion, number>;
