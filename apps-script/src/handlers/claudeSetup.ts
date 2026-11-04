@@ -8,7 +8,8 @@ import {
   type TaskType,
 } from '../../../shared/constants';
 import { essayLabel } from '../category';
-import { bool, type Ctx } from '../context';
+import { activeSampleIds } from '../calibration';
+import { bool, type Ctx, type EssayRow } from '../context';
 import type { ActionDef } from '../router';
 import { errorsView, scoreView } from '../views';
 
@@ -23,20 +24,21 @@ export function categoryExport(ctx: Ctx): string {
   return lines.join('\n');
 }
 
-export function samplesExport(ctx: Ctx): string {
-  const ids = new Set(ctx.db.all('CalibrationSamples').map((s) => s.essay_id));
-  const essays = ctx.db.find('Essays', (e) => ids.has(e.id) && e.status === 'scored');
+/** Scored essays as calibration samples: prompt, essay, the teacher's final scores and feedback. */
+export function formatSamples(ctx: Ctx, essays: EssayRow[]): string {
   const parts = [
     'CALIBRATION SAMPLES',
     'Essays scored by the teacher. Use them to match the teacher’s standard.',
     '',
   ];
-  essays.forEach((e, i) => {
+  let n = 0;
+  essays.forEach((e) => {
     const score = scoreView(ctx, e.id);
     if (!score) return;
+    n++;
     const taskType = e.task_type as TaskType;
     parts.push(
-      `===== SAMPLE ${i + 1} =====`,
+      `===== SAMPLE ${n} =====`,
       `Task type: ${TASK_TYPE_LABELS[taskType]}`,
       `${taskType === 'task1_academic' ? 'Diagram type' : 'Topic and essay type'}: ${essayLabel(ctx, e)}`,
       `Prompt: ${e.prompt}`,
@@ -57,9 +59,17 @@ export function samplesExport(ctx: Ctx): string {
       '',
     );
   });
-  if (essays.length === 0)
+  if (n === 0)
     parts.push('(No samples marked yet. Tick "Use as calibration sample" on a scored essay.)');
   return parts.join('\n');
+}
+
+export function samplesExport(ctx: Ctx): string {
+  const ids = activeSampleIds(ctx);
+  return formatSamples(
+    ctx,
+    ctx.db.find('Essays', (e) => ids.has(e.id) && e.status === 'scored'),
+  );
 }
 
 export const claudeSetupActions: Record<string, ActionDef> = {
@@ -69,7 +79,7 @@ export const claudeSetupActions: Record<string, ActionDef> = {
       instructions: claudeProjectInstructions(),
       categories: categoryExport(ctx),
       samples: samplesExport(ctx),
-      sampleCount: ctx.db.all('CalibrationSamples').length,
+      sampleCount: activeSampleIds(ctx).size,
     }),
   },
 };

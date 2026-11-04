@@ -11,6 +11,7 @@ import {
 import { endOfDayUtc } from '../../../shared/dates';
 import { buildPracticeTasks } from '../../../shared/practice';
 import { adminTimezone, ApiError, type Ctx, type EssayRow, parseJson } from '../context';
+import { setSample } from '../calibration';
 import { type Category, categoryColumns } from '../category';
 import { clearDashboardCache } from '../dashboardCache';
 import { MAX_CELL } from '../db';
@@ -291,6 +292,8 @@ function saveScore(ctx: Ctx, payload: unknown) {
       : { practice_required: errors.length > 0 ? 'true' : '' }),
   });
   ensureClaudeSourceRow(ctx, essay.id);
+  // Every sent result becomes a calibration sample, unless the teacher unticked it before.
+  const sample = setSample(ctx, essay.id, 'auto');
   clearDashboardCache(ctx, essay.student_id);
 
   let email: SendOutcome | 'none' = 'none';
@@ -300,7 +303,7 @@ function saveScore(ctx: Ctx, payload: unknown) {
   } else if (notifyAgain) {
     email = sendEmail(ctx, resultJob(ctx, fresh, 'result_resent', requestId));
   }
-  return { email, status: 'scored' };
+  return { email, status: 'scored', addedSample: sample };
 }
 
 /**

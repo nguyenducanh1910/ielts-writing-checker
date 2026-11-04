@@ -10,7 +10,8 @@ import {
 } from '../../../shared/constants';
 import { placeExcerpts } from '../../../shared/excerpt';
 import { PROMPT_KEY_RE, promptKey, promptLabel } from '../../../shared/promptKey';
-import { calibrationFor } from '../calibration';
+import { latestJobs } from '../aiScoring';
+import { calibrationFor, isSample, setSample } from '../calibration';
 import { essayLabel } from '../category';
 import { ApiError, bool, type Ctx, type EssayRow, num, parseJson } from '../context';
 import { clearDashboardCache } from '../dashboardCache';
@@ -86,6 +87,7 @@ function queue(ctx: Ctx, payload: unknown) {
   const users = new Map(ctx.db.all('Users').map((u) => [u.id, u]));
   const assignments = new Map(ctx.db.all('Assignments').map((a) => [a.id, a]));
   const keys = promptKeys(ctx);
+  const ai = latestJobs(ctx);
   const items = ctx.db
     .find('Essays', (e) => {
       if (e.status === 'draft') return false;
@@ -116,6 +118,7 @@ function queue(ctx: Ctx, payload: unknown) {
       overTime: bool(e.over_time),
       pasteAttempts: num(e.paste_attempts) ?? 0,
       activity: qs === 'scored' ? resultActivity(ctx, e) : null,
+      ai: ai.get(e.id) ?? null,
     }));
   // Oldest first; recently scored essays newest first.
   items.sort((a, b) =>
@@ -258,7 +261,7 @@ function adminEssay(ctx: Ctx, payload: unknown) {
     })),
     topics: ctx.db.all('Topics').map((t) => ({ id: t.id, label: t.label, active: bool(t.active) })),
     recurringErrors: recurringErrors(ctx, essay.student_id, essay.id),
-    isSample: Boolean(ctx.db.findOne('CalibrationSamples', (s) => s.essay_id === essay.id)),
+    isSample: isSample(ctx, essay.id),
     samePrompt: samePrompt(ctx, essay),
     emailEvents: ctx.db
       .find('EmailEvents', (e) => e.essay_id === essay.id)
@@ -503,14 +506,7 @@ function toggleSample(ctx: Ctx, payload: unknown) {
   const sample = r.bool('sample');
   r.done();
   loadEssay(ctx, essayId);
-  ctx.db.remove('CalibrationSamples', (s) => s.essay_id === essayId);
-  if (sample) {
-    ctx.db.insert('CalibrationSamples', {
-      id: ctx.svc.uuid(),
-      essay_id: essayId,
-      created_at: ctx.nowIso,
-    });
-  }
+  setSample(ctx, essayId, sample ? 'manual' : 'excluded');
   return { sample };
 }
 
