@@ -7,7 +7,7 @@ declare const __EXPECTED_BACKEND_VERSION__: string | undefined;
 export const EXPECTED_BACKEND_VERSION: string =
   typeof __EXPECTED_BACKEND_VERSION__ === 'string' ? __EXPECTED_BACKEND_VERSION__ : 'dev';
 
-export const CLASSROOM_VERSION = '2026-11-04.2';
+export const CLASSROOM_VERSION = '2026-11-05.1';
 
 /** True when both sides are known and differ ("dev" builds never warn). */
 export function versionMismatch(expected: string, actual: string | undefined): boolean {

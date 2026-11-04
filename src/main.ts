@@ -47,6 +47,7 @@ const ADMIN_NAV: Array<[string, string]> = [
   ['/admin/emails', 'Email'],
   ['/admin/lists', 'Lists'],
   ['/admin/claude', 'Claude setup'],
+  ['/admin/ai', 'Chấm tự động'],
 ];
 
 const app = document.getElementById('app')!;
