@@ -540,7 +540,8 @@ const MODEL_RE = /^[a-z0-9][a-z0-9.\-_]{2,60}$/;
 
 function saveSettings(ctx: Ctx, payload: unknown) {
   const r = new Reader(payload);
-  const geminiKey = r.str('geminiKey', { max: 300, optional: true });
+  // Keys copied from AI Studio can carry spaces/line breaks; newer keys may contain dots.
+  const geminiKey = r.str('geminiKey', { max: 400, optional: true }).replace(/\s+/g, '');
   const clearGemini = r.has('clearGeminiKey') ? r.bool('clearGeminiKey') : false;
   const geminiModel = r.str('geminiModel', { max: 64, optional: true });
   const rubric = r.str('rubric', { max: MAX_RUBRIC, optional: true, trim: false });
@@ -549,10 +550,13 @@ function saveSettings(ctx: Ctx, payload: unknown) {
     max: MAX_SAMPLES_PER_PROMPT,
     optional: true,
   });
-  if (geminiKey && !/^[\w-]{20,}$/.test(geminiKey))
-    r.addError('geminiKey', 'Khoá Gemini API không đúng dạng');
+  if (geminiKey && !/^[\w.-]{20,300}$/.test(geminiKey))
+    r.addError(
+      'geminiKey',
+      'Khoá Gemini API không đúng dạng — hãy chép lại đúng khoá từ aistudio.google.com/apikey',
+    );
   if (geminiModel && !MODEL_RE.test(geminiModel))
-    r.addError('geminiModel', 'Tên model không hợp lệ');
+    r.addError('geminiModel', 'Tên model không hợp lệ (ví dụ: gemini-flash-latest)');
   r.done();
   if (geminiKey) ctx.svc.setSecret('GEMINI_API_KEY', geminiKey);
   else if (clearGemini) ctx.svc.setSecret('GEMINI_API_KEY', '');
