@@ -12,7 +12,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'dist');
 mkdirSync(outDir, { recursive: true });
 
-const entryPoints = ['doGet', 'doPost', 'setup', 'installTriggers', 'dailyJob', 'hourlyJob'];
+const entryPoints = [
+  'doGet',
+  'doPost',
+  'setup',
+  'installTriggers',
+  'dailyJob',
+  'hourlyJob',
+  'aiJob',
+];
 
 const footer = entryPoints
   .map((name) => `function ${name}(e) { return __App.${name}(e); }`)
