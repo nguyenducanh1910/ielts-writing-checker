@@ -104,8 +104,21 @@ function callOnce(svc: Services, req: HttpRequest, read: typeof readGeminiRespon
 }
 
 function one(svc: Services, req: HttpRequest): [number, string] {
-  const [res] = svc.http.fetchAll([req]);
-  return [res.status, res.text];
+  try {
+    const [res] = svc.http.fetchAll([req]);
+    return [res.status, res.text];
+  } catch (err) {
+    svc.log(`Gemini request failed: ${(err as Error)?.stack ?? String(err)}`);
+    throw new ApiError('conflict', fetchFailure(err));
+  }
+}
+
+/** Apps Script could not send the request at all (usually a missing permission). */
+export function fetchFailure(err: unknown): string {
+  const text = String((err as Error)?.message ?? err);
+  if (/permission|quyền|authoriz|cấp phép|script\.external_request/i.test(text))
+    return 'Apps Script chưa được cấp quyền kết nối ra ngoài (Gemini). Mở dự án Apps Script của web Writing, chọn hàm setup, bấm Chạy và bấm “Cho phép” khi Google hỏi quyền; sau đó triển khai lại “Phiên bản mới”.';
+  return `Không gửi được yêu cầu tới Gemini: ${text.slice(0, 300)}`;
 }
 
 // ---------- Preparing one essay ----------
@@ -570,13 +583,19 @@ function saveSettings(ctx: Ctx, payload: unknown) {
 function testConnection(ctx: Ctx) {
   const cfg = aiConfig(ctx);
   if (!cfg.hasGeminiKey) return { gemini: { ok: false, message: 'Chưa nhập khoá Gemini API' } };
-  const [res] = ctx.svc.http.fetchAll([
-    geminiRequest(
-      ctx.svc,
-      cfg.geminiModel,
-      JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }] }),
-    ),
-  ]);
+  let res: { status: number; text: string };
+  try {
+    [res] = ctx.svc.http.fetchAll([
+      geminiRequest(
+        ctx.svc,
+        cfg.geminiModel,
+        JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }] }),
+      ),
+    ]);
+  } catch (err) {
+    ctx.svc.log(`Gemini test failed: ${(err as Error)?.stack ?? String(err)}`);
+    return { gemini: { ok: false, message: fetchFailure(err) } };
+  }
   const x = readGeminiResponse(res.status, res.text);
   return {
     gemini: x.ok

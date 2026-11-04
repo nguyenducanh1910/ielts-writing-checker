@@ -198,7 +198,24 @@ export function doPost(e: GoogleAppsScript.Events.DoPost) {
 }
 
 /** Run once from the Apps Script editor. */
+/**
+ * Google lets the owner untick single permissions on the consent screen. Ask again for any
+ * that are missing (Gemini needs script.external_request) before setup runs.
+ */
+function requireAllScopes() {
+  const app = ScriptApp as unknown as {
+    requireScopes?: (mode: GoogleAppsScript.Script.AuthMode, scopes: string[]) => void;
+  };
+  app.requireScopes?.(ScriptApp.AuthMode.FULL, [
+    'https://www.googleapis.com/auth/script.external_request',
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/script.scriptapp',
+  ]);
+}
+
 export function setup() {
+  requireAllScopes();
   const svc = realServices();
   const lock = svc.lock;
   lock.waitLock(30000);
