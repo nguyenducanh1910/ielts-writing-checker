@@ -91,6 +91,34 @@ export interface ScriptProps {
   PORTAL_SECRET?: string;
   /** "true" makes setup() add the demo students and essays. Not set: no demo data. */
   SEED_DEMO?: string;
+  /** Automatic scoring: Gemini API key (aistudio.google.com). Never sent to browsers. */
+  GEMINI_API_KEY?: string;
+}
+
+/** Keys that the admin may set from the website (Settings → Automatic scoring). */
+export type SecretName = 'GEMINI_API_KEY';
+
+export interface HttpRequest {
+  url: string;
+  headers: Record<string, string>;
+  /** JSON text, sent with POST. */
+  body: string;
+}
+
+export interface HttpResponse {
+  status: number;
+  text: string;
+}
+
+/** Outgoing HTTPS calls (UrlFetchApp). fetchAll runs the requests in parallel. */
+export interface HttpService {
+  fetchAll(requests: HttpRequest[]): HttpResponse[];
+}
+
+/** One-off background runs (time-driven triggers). */
+export interface JobScheduler {
+  /** Run the named entry point once, about a minute from now (no duplicate if one is waiting). */
+  runSoon(handler: 'aiJob'): void;
 }
 
 export interface Services {
@@ -100,6 +128,10 @@ export interface Services {
   cache: CacheLike;
   lock: LockLike;
   props: ScriptProps;
+  /** Store (or with '' remove) a Script Property secret; updates props too. */
+  setSecret(name: SecretName, value: string): void;
+  http: HttpService;
+  jobs: JobScheduler;
   uuid(): string;
   sha256Hex(text: string): string;
   now(): Date;

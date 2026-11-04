@@ -1,4 +1,5 @@
 // Registers every action module with the router and exposes the API entry.
+import { aiActions } from './aiScoring';
 import { accountActions } from './handlers/account';
 import { adminActions } from './handlers/admin';
 import { adminUploadActions } from './handlers/adminUpload';
@@ -27,6 +28,7 @@ function ensureRegistered(): void {
   registerActions(claudeSetupActions);
   registerActions(scoringActions);
   registerActions(dashboardActions);
+  registerActions(aiActions);
 }
 
 export function callApi(svc: Services, rawBody: string): ApiResponse {

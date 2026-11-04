@@ -111,7 +111,20 @@ export const SCHEMA = {
     'note',
     'created_at',
   ],
-  CalibrationSamples: ['id', 'essay_id', 'created_at'],
+  /** source: 'manual' (ticked), 'auto' (added when the result was sent), 'excluded' (unticked). */
+  CalibrationSamples: ['id', 'essay_id', 'created_at', 'source'],
+  /** Automatic scoring runs (Claude draft, Gemini, Claude reconcile). */
+  AiJobs: [
+    'id',
+    'essay_id',
+    'status',
+    'step',
+    'error',
+    'warnings',
+    'usage_json',
+    'created_at',
+    'updated_at',
+  ],
   EmailEvents: [
     'id',
     'essay_id',

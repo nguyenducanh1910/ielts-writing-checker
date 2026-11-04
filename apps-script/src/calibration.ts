@@ -53,3 +53,41 @@ export function calibrationFor(ctx: Ctx, taskType = '', includeInactive = false)
     return sourceCalibration(rows, sources);
   });
 }
+
+/** A calibration sample row that is in use (unticked rows stay as 'excluded'). */
+export function activeSampleIds(ctx: Ctx): Set<string> {
+  return new Set(
+    ctx.db
+      .all('CalibrationSamples')
+      .filter((s) => s.source !== 'excluded')
+      .map((s) => s.essay_id),
+  );
+}
+
+export function isSample(ctx: Ctx, essayId: string): boolean {
+  return ctx.db
+    .find('CalibrationSamples', (s) => s.essay_id === essayId)
+    .some((s) => s.source !== 'excluded');
+}
+
+/**
+ * Mark an essay as a sample ('manual' ticked, 'auto' added when its result was sent) or
+ * unticked ('excluded': remembered, so sending the result again does not add it back).
+ * Before setup() has added the "source" column, unticking simply removes the row.
+ */
+export function setSample(ctx: Ctx, essayId: string, source: 'manual' | 'auto' | 'excluded') {
+  const tracked = ctx.db.hasColumn('CalibrationSamples', 'source');
+  const existing = ctx.db.find('CalibrationSamples', (s) => s.essay_id === essayId);
+  if (source === 'auto') {
+    if (existing.length || !tracked) return false; // already decided by the teacher (or no column yet)
+  }
+  ctx.db.remove('CalibrationSamples', (s) => s.essay_id === essayId);
+  if (source === 'excluded' && !tracked) return false;
+  ctx.db.insert('CalibrationSamples', {
+    id: ctx.svc.uuid(),
+    essay_id: essayId,
+    created_at: ctx.nowIso,
+    source,
+  });
+  return true;
+}

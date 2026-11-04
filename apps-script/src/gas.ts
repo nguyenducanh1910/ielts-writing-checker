@@ -4,6 +4,7 @@ import { callApi } from './api';
 import { adminTimezone, createCtx } from './context';
 import { recordEmailOpen } from './email';
 import { runSetup } from './setup';
+import { runAiJobs } from './aiScoring';
 import { runDailyJob, runHourlyJob } from './triggers';
 import type { DriveService, MailService, ScriptProps, Services, StoredFile } from './services';
 
@@ -16,6 +17,7 @@ function scriptProps(): ScriptProps {
     APP_URL: p.getProperty('APP_URL') ?? undefined,
     PORTAL_SECRET: p.getProperty('PORTAL_SECRET') ?? undefined,
     SEED_DEMO: p.getProperty('SEED_DEMO') ?? undefined,
+    GEMINI_API_KEY: p.getProperty('GEMINI_API_KEY') ?? undefined,
   };
 }
 
@@ -91,6 +93,37 @@ function realServices(): Services {
     cache: CacheService.getScriptCache(),
     lock: LockService.getScriptLock(),
     props,
+    setSecret: (name, value) => {
+      const p = PropertiesService.getScriptProperties();
+      if (value) p.setProperty(name, value);
+      else p.deleteProperty(name);
+      props[name] = value || undefined;
+    },
+    http: {
+      fetchAll: (requests) =>
+        UrlFetchApp.fetchAll(
+          requests.map((r) => ({
+            url: r.url,
+            method: 'post' as const,
+            contentType: 'application/json',
+            headers: r.headers,
+            payload: r.body,
+            muteHttpExceptions: true,
+          })),
+        ).map((res) => ({ status: res.getResponseCode(), text: res.getContentText() })),
+    },
+    jobs: {
+      runSoon: (handler) => {
+        const waiting = ScriptApp.getProjectTriggers().some(
+          (t) => t.getHandlerFunction() === handler,
+        );
+        if (!waiting)
+          ScriptApp.newTrigger(handler)
+            .timeBased()
+            .after(60 * 1000)
+            .create();
+      },
+    },
     uuid: () => Utilities.getUuid(),
     sha256Hex: (text) =>
       Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8)
@@ -208,6 +241,16 @@ function runSetupTimezone(svc: Services): string {
 /** Daily: rewrite reminders 2 days before, overdue status and email, housekeeping. */
 export function dailyJob() {
   const result = runDailyJob(realServices());
+  console.log(JSON.stringify(result));
+  return result;
+}
+
+/** Background automatic scoring (one-off trigger set by "Score all with AI"). */
+export function aiJob() {
+  for (const t of ScriptApp.getProjectTriggers()) {
+    if (t.getHandlerFunction() === 'aiJob') ScriptApp.deleteTrigger(t);
+  }
+  const result = runAiJobs(realServices());
   console.log(JSON.stringify(result));
   return result;
 }
