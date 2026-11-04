@@ -233,6 +233,9 @@ export const NEED_CLAUDE_DRAFT =
  * Gemini scores, then reconciles with the pasted Claude draft; stores the Gemini result and the
  * reconcile answer. Throws ApiError with a Vietnamese message when it cannot run.
  */
+const FIX_JSON =
+  'Your reply above is not a valid JSON object (it may be cut off). Send the complete answer again: one JSON object only, exactly in the required format, with every string closed and no text outside the JSON. Keep each feedback field short enough to finish.';
+
 export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): AiScoreResult {
   const ctx0 = createCtx(svc);
   const cfg = aiConfig(ctx0);
@@ -269,11 +272,41 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
   }
   if (!reply.ok) throw new ApiError('server_error', reply.message);
   usage = addUsage(usage, reply.usage);
-  const parsed = parseClaudeReply(reply.text);
+  let parsed = parseClaudeReply(reply.text);
+  // Invalid JSON (often a reply cut short): ask once to resend it, then try the fallback model.
+  if (!parsed.ok) {
+    svc.log(`Gemini JSON lỗi (${model}): ${parsed.errors.join(' ')} — ${reply.text.slice(0, 400)}`);
+    const fix = ask(model, [
+      firstTurn,
+      { role: 'model', text: reply.text.slice(0, 20000) },
+      { role: 'user', text: FIX_JSON },
+    ]);
+    if (fix.ok) {
+      usage = addUsage(usage, fix.usage);
+      const again = parseClaudeReply(fix.text);
+      if (again.ok) {
+        parsed = again;
+        reply = fix;
+      }
+    }
+  }
+  if (!parsed.ok && model !== GEMINI_FALLBACK_MODEL) {
+    const alt = ask(GEMINI_FALLBACK_MODEL, [firstTurn]);
+    if (alt.ok) {
+      usage = addUsage(usage, alt.usage);
+      const again = parseClaudeReply(alt.text);
+      if (again.ok) {
+        warnings.push(`${model} trả lời sai định dạng — đã dùng ${GEMINI_FALLBACK_MODEL}.`);
+        model = GEMINI_FALLBACK_MODEL;
+        parsed = again;
+        reply = alt;
+      }
+    }
+  }
   if (!parsed.ok) {
     throw new ApiError(
       'server_error',
-      `Gemini trả lời sai định dạng: ${parsed.errors.slice(0, 2).join(' ')}`,
+      `Gemini trả lời sai định dạng 3 lần (${parsed.errors[0] ?? ''}). Thầy bấm “Bắt đầu chấm (Gemini)” lại sau ít phút.`,
     );
   }
   const geminiDraft = parsed.value;
