@@ -81,7 +81,7 @@ test('Gemini scores and reconciles with the pasted Claude draft (no API cost)', 
   await expect(page.getByRole('heading', { name: 'Chấm tự động (Gemini)' })).toBeVisible();
   await page.getByLabel('Khoá Gemini API').fill('AIzaTestKey_0123456789abcdef');
   await page.getByRole('button', { name: 'Lưu cài đặt' }).click();
-  await expect(page.getByLabel('Khoá Gemini API (đã lưu)')).toHaveValue('');
+  await expect(page.getByLabel('Khoá Gemini API — đã lưu ✓')).toHaveValue('');
   await page.getByRole('button', { name: 'Kiểm tra kết nối' }).click();
   await expect(page.getByText(/Gemini: Kết nối được/)).toBeVisible();
 
