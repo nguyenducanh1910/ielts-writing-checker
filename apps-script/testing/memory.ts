@@ -5,6 +5,9 @@
 import type {
   CacheLike,
   DriveService,
+  HttpRequest,
+  HttpResponse,
+  HttpService,
   LockLike,
   MailMessage,
   MailService,
@@ -342,7 +345,20 @@ export function intlTzOffsetMinutes(date: Date, timeZone: string): number {
   return Math.round((asUtc - Math.floor(date.getTime() / 1000) * 1000) / 60000);
 }
 
+/** Outgoing HTTP in tests: a handler answers each request (default: 503 for everything). */
+export class MemoryHttp implements HttpService {
+  requests: HttpRequest[] = [];
+  handler: (req: HttpRequest) => HttpResponse = () => ({ status: 503, text: '{}' });
+  fetchAll(requests: HttpRequest[]): HttpResponse[] {
+    this.requests.push(...requests);
+    return requests.map((r) => this.handler(r));
+  }
+}
+
 export interface MemoryServices extends Services {
+  http: MemoryHttp;
+  /** Handlers passed to jobs.runSoon, in order. */
+  scheduled: string[];
   spreadsheet: MemorySpreadsheet;
   drive: MemoryDrive;
   mail: MemoryMail;
@@ -382,6 +398,16 @@ export function createMemoryServices(
       return `${rand}-0000-4000-8000-${hex}`;
     },
     sha256Hex: (text: string) => sha256(text),
+    setSecret(name, value) {
+      svc.props[name] = value || undefined;
+    },
+    http: new MemoryHttp(),
+    scheduled: [],
+    jobs: {
+      runSoon(handler) {
+        if (!svc.scheduled.includes(handler)) svc.scheduled.push(handler);
+      },
+    },
     now: clock,
     tzOffsetMinutes: intlTzOffsetMinutes,
     webAppUrl: () => 'https://script.example/exec',
