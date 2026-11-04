@@ -80,6 +80,18 @@ function prepare() {
 }
 
 describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
+  it('accepts keys with dots or pasted line breaks and names a bad key field', () => {
+    const { app, admin } = prepare();
+    const bad = app.raw('admin.ai.saveSettings', { geminiKey: 'short key!' }, admin);
+    expect(bad).toMatchObject({ ok: false, error: { fields: { geminiKey: expect.any(String) } } });
+    const s = app.call(
+      'admin.ai.saveSettings',
+      { geminiKey: ' AQ.Ab8RN6Kx_test-0123\n456789abcdef ' },
+      admin,
+    );
+    expect(s).toMatchObject({ hasGeminiKey: true });
+  });
+
   it('needs the Gemini key and a pasted Claude draft first', () => {
     const { app, admin, essayId, pasteClaude } = prepare();
     expect(app.raw('admin.ai.score', { essayId }, admin)).toMatchObject({
