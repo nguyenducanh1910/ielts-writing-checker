@@ -1,6 +1,6 @@
 // Chấm tự động (miễn phí): khoá Gemini API, model, số bài mẫu mỗi lần chấm, band descriptors.
 // Claude vẫn chấm bản đầu qua Claude.ai Project (chép–dán); Gemini chấm độc lập và đối chiếu.
-import { api } from '../../api';
+import { api, ApiClientError } from '../../api';
 import { h, replace } from '../../dom';
 import { async, busy, errorBox, field, link, notice, page } from '../../ui/components';
 import type { AiSettings } from './types';
@@ -32,8 +32,9 @@ export function aiSetupPage(): Node {
         save.addEventListener('click', () =>
           busy(save, 'Đang lưu…', async () => {
             try {
+              const keyText = key.value.replace(/\s+/g, '');
               await api('admin.ai.saveSettings', {
-                ...(key.value.trim() ? { geminiKey: key.value.trim() } : {}),
+                ...(keyText ? { geminiKey: keyText } : {}),
                 geminiModel: model.value.trim(),
                 samplesPerPrompt: Number(samples.value),
                 rubric: rubric.value,
@@ -41,7 +42,7 @@ export function aiSetupPage(): Node {
               key.value = '';
               reload();
             } catch (err) {
-              replace(status, errorBox(err));
+              replace(status, saveError(err));
             }
           }),
         );
@@ -101,7 +102,7 @@ export function aiSetupPage(): Node {
             'div',
             { class: 'card' },
             field({
-              label: data.hasGeminiKey ? 'Khoá Gemini API (đã lưu)' : 'Khoá Gemini API',
+              label: data.hasGeminiKey ? 'Khoá Gemini API — đã lưu ✓' : 'Khoá Gemini API — chưa có',
               control: key,
               hint: 'Tạo miễn phí tại aistudio.google.com → Get API key. Khoá chỉ lưu trong Apps Script, không hiện lại trên web. Lưu ý: với khoá miễn phí, Google có thể dùng nội dung gửi lên để cải thiện sản phẩm.',
             }),
@@ -129,4 +130,28 @@ export function aiSetupPage(): Node {
       'Đang tải…',
     ),
   );
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  geminiKey: 'Khoá Gemini API',
+  geminiModel: 'Model Gemini',
+  samplesPerPrompt: 'Số bài mẫu',
+  rubric: 'Band descriptors',
+};
+
+/** Save failed: name the fields the server rejected instead of a generic message. */
+function saveError(err: unknown): HTMLElement {
+  if (err instanceof ApiClientError && Object.keys(err.fields).length > 0) {
+    return notice(
+      'error',
+      h(
+        'ul',
+        null,
+        ...Object.entries(err.fields).map(([k, msg]) =>
+          h('li', null, `${FIELD_LABELS[k] ?? k}: ${msg}`),
+        ),
+      ),
+    );
+  }
+  return errorBox(err);
 }
