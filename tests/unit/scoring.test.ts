@@ -104,7 +104,7 @@ describe('Submit score', () => {
     );
 
     const res = app.call('admin.saveScore', scorePayload(p), admin);
-    expect(res).toEqual({ email: 'sent', status: 'scored' });
+    expect(res).toEqual({ email: 'sent', status: 'scored', addedSample: true });
 
     const score = rows(app, 'Scores', essayId)[0];
     expect(score.overall).toBe('6'); // (6.5+6+6+5.5)/4 = 6.0
