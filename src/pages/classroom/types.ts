@@ -41,6 +41,8 @@ export interface Overview {
   newClasses?: NewClass[];
   /** Tracked classes with a penalty file, usable as the template for a new class. */
   templates?: Array<{ id: string; name: string }>;
+  /** Since when Gemini has been overloaded (ISO), '' when it works. */
+  aiDownSince?: string;
 }
 
 export interface NewClass {

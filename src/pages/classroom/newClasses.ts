@@ -36,6 +36,7 @@ function trackForm(c: NewClass, templates: Array<{ id: string; name: string }>):
     'RW',
   );
   const writing = h('input', { type: 'checkbox', name: 'addToWriting', checked: true });
+  const fromToday = h('input', { type: 'checkbox', name: 'fromToday', checked: true });
   const penaltyFields = h(
     'div',
     { class: 'cl-newclass-fields' },
@@ -84,6 +85,12 @@ function trackForm(c: NewClass, templates: Array<{ id: string; name: string }>):
     penaltyFields,
     h('label', { class: 'cl-check' }, writing, ' Thêm lớp vào web Writing (xếp HS vào lớp)'),
     h(
+      'label',
+      { class: 'cl-check' },
+      fromToday,
+      ' Chỉ tự chấm bài giao từ hôm nay (bài cũ đã hết hạn chỉ theo dõi nộp bài, không gửi lên web Writing)',
+    ),
+    h(
       'p',
       { class: 'cl-muted' },
       'Sau đó hệ thống tự đồng bộ bài tập, chấm bài, nhắc hạn, điền file phạt và thêm HS mới vào lớp như các lớp khác.',
@@ -116,6 +123,7 @@ function trackForm(c: NewClass, templates: Array<{ id: string; name: string }>):
           startLesson: n,
           startType: startType.value,
           addToWriting: writing.checked,
+          fromToday: fromToday.checked,
         });
         done(
           h('p', { class: 'cl-pre' }, r.message),

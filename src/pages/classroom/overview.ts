@@ -2,7 +2,7 @@
 import { api } from '../../api';
 import { classroom } from '../../classroomApi';
 import { type Child, h, replace } from '../../dom';
-import { async, busy, empty, errorBox, link } from '../../ui/components';
+import { async, busy, empty, errorBox, link, notice } from '../../ui/components';
 import { newClassesSection, refreshClassesButton } from './newClasses';
 import type { QueueResponse } from '../admin/types';
 import type { Health, Overview, OverviewAssignment } from './types';
@@ -142,6 +142,12 @@ function overviewContent(ov: Overview, writingQueue: number | null, reload: () =
       link('/lop/giao-bai', 'Giao bài mới', { class: 'btn btn-primary' }),
       externalLink(ov.sheetUrl, 'Mở Google Sheet ↗', 'btn'),
     ),
+    ov.aiDownSince && Date.now() - Date.parse(ov.aiDownSince) > 3 * 3600e3
+      ? notice(
+          'warning',
+          `Gemini quá tải từ ${viDateTime(ov.aiDownSince)}: bài Speaking và bài viết tay đang chờ chấm (các bài khác vẫn chấm bình thường). Hệ thống tự thử lại mỗi giờ; có thể đổi "Model Gemini" trong sheet Cấu hình sang gemini-flash-lite-latest.`,
+        )
+      : null,
     newClassesSection(ov.newClasses, ov.templates),
     h(
       'div',
