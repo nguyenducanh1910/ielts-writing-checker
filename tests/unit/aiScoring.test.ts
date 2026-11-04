@@ -80,6 +80,34 @@ function prepare() {
 }
 
 describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
+  it('asks Gemini to resend when its first reply is cut off, then scores normally', () => {
+    const { app, admin, essayId, pasteClaude } = prepare();
+    app.call('admin.ai.saveSettings', { geminiKey: KEY }, admin);
+    pasteClaude();
+    const good = app.svc.http.handler;
+    let calls = 0;
+    app.svc.http.handler = (r) => {
+      calls++;
+      if (calls === 1) {
+        const cut = JSON.stringify(result({ task: 7, coherence: 7, lexical: 7, grammar: 7 })).slice(
+          0,
+          60,
+        );
+        return {
+          status: 200,
+          text: JSON.stringify({ candidates: [{ content: { parts: [{ text: cut }] } }] }),
+        };
+      }
+      // the resend request has 3 turns, like the reconcile one: answer with a valid draft first
+      if (calls === 2)
+        return gemini(result({ task: 7, coherence: 6.5, lexical: 7, grammar: 6.5 }, 'gemini'));
+      return good(r);
+    };
+    const res = app.call('admin.ai.score', { essayId }, admin);
+    expect(res.gemini).toMatchObject({ overall: 7 });
+    expect(res.reconciled.generalComment).toBe('reconciled');
+  });
+
   it('explains a missing UrlFetch permission instead of a generic server error', () => {
     const { app, admin } = prepare();
     app.call('admin.ai.saveSettings', { geminiKey: KEY }, admin);

@@ -268,3 +268,17 @@ describe('email feedback summary', () => {
     expect(summarize('a'.repeat(500)).length).toBe(400);
   });
 });
+
+describe('loose JSON from chat replies', () => {
+  it('repairs raw line breaks, trailing commas and a wrapping array', async () => {
+    const { parseJsonLoosely } = await import('../../shared/claude');
+    expect(parseJsonLoosely('Đây là kết quả:\n```json\n{"a": "x\ny", "b": [1, 2,],}\n```')).toEqual(
+      {
+        a: 'x\ny',
+        b: [1, 2],
+      },
+    );
+    expect(parseJsonLoosely('[{"a": 1}]')).toEqual([{ a: 1 }]);
+    expect(parseJsonLoosely('{"a": "cut')).toBeUndefined();
+  });
+});
