@@ -427,6 +427,7 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
           ...tracked.map((c) => ({ ...c, students: 12 })),
         ],
         newClasses,
+        aiDownSince: '',
         templates: CLASSES.filter((c) => c.hasPenaltyFile).map((c) => ({ id: c.id, name: c.name })),
         todo: {
           review: counts(state.subs).review,

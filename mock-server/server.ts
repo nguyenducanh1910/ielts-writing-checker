@@ -5,10 +5,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { callApi } from '../apps-script/src/api';
 import { createCtx } from '../apps-script/src/context';
+import { runAiJobs } from '../apps-script/src/aiScoring';
 import { runSetup } from '../apps-script/src/setup';
 import { runDailyJob, runHourlyJob } from '../apps-script/src/triggers';
 import { createMemoryServices, type MemoryServices } from '../apps-script/testing/memory';
 import { createClassroomMock } from './classroom';
+import { fakeGemini } from './gemini';
 
 const PORT = Number(process.env.MOCK_API_PORT ?? 8787);
 const APP_URL = process.env.MOCK_APP_URL ?? 'http://localhost:5173/';
@@ -18,6 +20,7 @@ const classroomMock = createClassroomMock(() => svc);
 
 function fresh(): MemoryServices {
   const s = createMemoryServices({ APP_URL }, { realTime: true });
+  s.http.handler = fakeGemini;
   runSetup(s);
   return s;
 }
@@ -63,6 +66,10 @@ const server = createServer(async (req, res) => {
       svc = fresh();
       classroomMock.reset();
       return send(res, 200, { ok: true });
+    }
+    if (url.pathname === '/__test/run-ai') {
+      svc.scheduled.length = 0;
+      return send(res, 200, runAiJobs(svc));
     }
     if (url.pathname === '/__test/outbox') {
       return send(
