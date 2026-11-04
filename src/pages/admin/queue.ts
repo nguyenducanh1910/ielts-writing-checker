@@ -1,7 +1,7 @@
 // Admin queue: pending essays and submitted rewrites, oldest first.
 import { TASK_TYPE_LABELS } from '../../../shared/constants';
 import { api } from '../../api';
-import { h, replace } from '../../dom';
+import { type Child, h, replace } from '../../dom';
 import type { RouteContext } from '../../router';
 import { navigate } from '../../router';
 import {
@@ -142,6 +142,7 @@ export function queuePage(ctx: RouteContext): Node {
               )
             : null,
           batchable ? batch.panel : null,
+          aiQueueButton(data.items, reload),
           rows.length
             ? table(
                 [
@@ -171,6 +172,62 @@ export function queuePage(ctx: RouteContext): Node {
   );
 }
 
+const AI_LABELS: Record<string, [string, string]> = {
+  queued: ['Gemini: chờ chấm', 'info'],
+  running: ['Gemini: đang chấm', 'info'],
+  done: ['Gemini: đã đối chiếu', 'success'],
+  failed: ['Gemini: lỗi', 'danger'],
+};
+
+function aiBadge(item: QueueItem): Child {
+  if (!item.ai || item.queueStatus === 'scored') return null;
+  const [label, kind] = AI_LABELS[item.ai.status] ?? [item.ai.status, ''];
+  const b = badge(label, kind);
+  if (item.ai.error) b.title = item.ai.error;
+  return [' ', b];
+}
+
+/** "Gemini chấm & đối chiếu": every waiting essay with a pasted Claude draft and no AI result yet. */
+function aiQueueButton(items: QueueItem[], reload: () => void): HTMLElement | null {
+  const ready = items.filter(
+    (i) => i.queueStatus === 'claude_pasted' && (!i.ai || i.ai.status === 'failed'),
+  );
+  const busyNow = items.filter(
+    (i) => i.ai && (i.ai.status === 'queued' || i.ai.status === 'running'),
+  );
+  if (!ready.length && !busyNow.length) return null;
+  const status = h('span', { class: 'hint', 'aria-live': 'polite' });
+  const btn = h(
+    'button',
+    { type: 'button', class: 'btn btn-primary', disabled: !ready.length },
+    `Gemini chấm & đối chiếu ${ready.length} bài đã dán Claude`,
+  );
+  btn.addEventListener('click', () =>
+    busy(btn, 'Đang xếp hàng…', async () => {
+      try {
+        const r = await api<{ queued: number }>('admin.ai.queue', {
+          essayIds: ready.slice(0, 50).map((i) => i.id),
+        });
+        toast(`Đã xếp ${r.queued} bài. Hệ thống chấm nền, khoảng 1–2 phút mỗi bài.`);
+        reload();
+      } catch (err) {
+        replace(status, errorBox(err));
+      }
+    }),
+  );
+  const refresh = h('button', { type: 'button', class: 'btn' }, 'Làm mới');
+  refresh.addEventListener('click', reload);
+  return h(
+    'p',
+    { class: 'actions' },
+    btn,
+    busyNow.length ? [' ', refresh, ` ${busyNow.length} bài đang chờ/đang chấm.`] : null,
+    ' ',
+    link('/admin/ai', 'Cài đặt'),
+    status,
+  );
+}
+
 const FILTER_KEYS = ['taskType', 'studentId', 'status', 'assignmentId', 'promptKey'];
 
 /** The queue filters in a URL query, as an admin.queue payload (empty values left out). */
@@ -187,7 +244,7 @@ export function filterQuery(q: URLSearchParams, keys = FILTER_KEYS): string {
 /** Filters that pick which essays come next after scoring (the status is always "waiting"). */
 export const NEXT_KEYS = ['taskType', 'studentId', 'assignmentId', 'promptKey'];
 
-function queueRow(item: QueueItem, reload: () => void, next: string) {
+function queueRow(item: QueueItem, reload: () => void, next: string): Child[] {
   const retry =
     item.queueStatus === 'drive_failed'
       ? h('button', { type: 'button', class: 'btn btn-small' }, 'Retry Drive copy')
@@ -223,13 +280,16 @@ function queueRow(item: QueueItem, reload: () => void, next: string) {
       item.pasteAttempts ? [' ', badge(`${item.pasteAttempts} paste attempt(s)`, 'warning')] : null,
     ],
     formatDateTime(item.submittedAt),
-    badge(
-      QUEUE_STATUS_LABELS[item.queueStatus] ??
-        (item.queueStatus === 'scored'
-          ? `Scored ${formatDateTime(item.scoredAt)}`
-          : item.queueStatus),
-      STATUS_KIND[item.queueStatus],
-    ),
+    [
+      badge(
+        QUEUE_STATUS_LABELS[item.queueStatus] ??
+          (item.queueStatus === 'scored'
+            ? `Scored ${formatDateTime(item.scoredAt)}`
+            : item.queueStatus),
+        STATUS_KIND[item.queueStatus],
+      ),
+      aiBadge(item),
+    ],
     [
       link(
         `/admin/score/${item.id}${next}`,

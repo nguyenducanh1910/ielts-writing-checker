@@ -49,6 +49,7 @@ import { tabs } from '../../ui/tabs';
 import { scoreTable } from '../student/essayDetail';
 import type {
   AdminEssayResponse,
+  AiScoreResult,
   CategoryRow,
   QueueItem,
   QueueResponse,
@@ -683,13 +684,13 @@ function buildScoring(
   notifyBox.addEventListener('change', () => (state.notifyAgain = notifyBox.checked));
 
   const reconcileView = h('div');
-  const showReconcile = (text: string | null, at?: string) => {
+  const showReconcile = (text: string | null, at?: string, open = false) => {
     replace(
       reconcileView,
       text
         ? h(
             'details',
-            { class: 'card reconcile-box' },
+            { class: 'card reconcile-box', open },
             h('summary', null, 'Reconcile notes', at ? ` · saved ${formatDateTime(at)}` : ''),
             plainText(text),
           )
@@ -881,12 +882,66 @@ function buildScoring(
     renderText();
   };
 
+  // Free automatic scoring: after Claude's draft is pasted, Gemini scores and reconciles.
+  const aiStatus = h('div', { 'aria-live': 'polite' });
+  const aiBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn btn-primary',
+      disabled: essay.status === 'scored',
+      title: 'Gemini chấm độc lập rồi đối chiếu với bản chấm của Claude đã dán',
+    },
+    'Bắt đầu chấm (Gemini)',
+  );
+  aiBtn.addEventListener('click', () => {
+    if (!lastDraft) {
+      replace(
+        aiStatus,
+        notice(
+          'warning',
+          'Dán bản chấm của Claude trước: “Copy for Claude” → Claude Project → “Paste Claude draft”.',
+        ),
+      );
+      return;
+    }
+    void busy(aiBtn, 'Gemini đang chấm & đối chiếu… (1–2 phút)', async () => {
+      replace(aiStatus);
+      try {
+        const res = await api<AiScoreResult>('admin.ai.score', { essayId: essay.id });
+        if (res.reconcileText) showReconcile(res.reconcileText, new Date().toISOString(), true);
+        await loadIntoForm(
+          res.reconciled ?? res.claudeDraft,
+          res.reconciled ? 'reconciled' : 'draft',
+        );
+        replace(
+          aiStatus,
+          notice(
+            res.warnings.length ? 'warning' : 'success',
+            h(
+              'p',
+              null,
+              res.reconciled
+                ? `Đã điền kết quả đối chiếu Claude + Gemini (Gemini: band ${formatBand(res.gemini?.overall ?? null)}, dùng ${res.samples} bài mẫu). Xem ghi chú đối chiếu ở trên, sửa nếu cần rồi gửi.`
+                : 'Đã điền bản chấm của Claude (chưa đối chiếu được).',
+            ),
+            ...res.warnings.map((w) => h('p', null, w)),
+            h('p', { class: 'hint' }, 'Kết quả Gemini đầy đủ ở tab Gemini (tải lại trang để xem).'),
+          ),
+        );
+      } catch (err) {
+        replace(aiStatus, errorBox(err), link('/admin/ai', 'Cài đặt chấm tự động'));
+      }
+    });
+  });
+
   const formPanel = h(
     'section',
     { 'aria-labelledby': 'form-heading' },
     h('h2', { id: 'form-heading' }, 'Score'),
     reconcileView,
-    h('div', { class: 'actions' }, copyBtn, pasteBtn),
+    h('div', { class: 'actions' }, copyBtn, pasteBtn, aiBtn),
+    aiStatus,
     scoreBox,
     h('p', null, overallOut),
     topicBox,
@@ -903,7 +958,7 @@ function buildScoring(
       h(
         'label',
         { for: 'is-sample' },
-        'Use as calibration sample (exported to the Claude Project)',
+        'Use as calibration sample (tự thêm khi gửi điểm; bỏ tick để loại khỏi bài mẫu)',
       ),
     ),
     essay.status === 'scored'
@@ -920,78 +975,80 @@ function buildScoring(
   );
 
   // ---------- Reference panel ----------
+  const loadIntoForm = async (draft: ClaudeDraft, kind: 'draft' | 'reconciled') => {
+    const what = kind === 'reconciled' ? 'Claude’s reconciled result' : 'Claude’s draft';
+    if (state.errors.length || CRITERIA.some((c) => state.scores[c] !== null)) {
+      const ok = await confirmDialog({
+        title: `Replace the form with ${what}?`,
+        message:
+          'Scores, feedback and tagged errors in the form will be replaced. Nothing is sent to the student.',
+        confirmLabel: 'Load into form',
+      });
+      if (!ok) return;
+    }
+    const matched = matchClaudeErrors(
+      draft.errors,
+      activeCats.map((c) => ({ id: c.id, label: c.label })),
+      essay.body,
+    );
+    state.scores = { ...draft.scores };
+    state.feedback = { ...draft.feedback };
+    state.generalComment = draft.generalComment;
+    // Task 1 Academic has no topic; only Task 2 takes Claude's suggested topic.
+    const topic =
+      taskType === 'task2'
+        ? matchTopic(
+            draft.suggestedTopic,
+            data.topics.filter((t) => t.active),
+          )
+        : null;
+    if (topic) state.category = { ...state.category, topicId: topic };
+    state.errors = matched.map((m) => ({
+      key: newKey(),
+      categoryId: m.categoryId,
+      unknownLabel: m.unknownCategory ? m.category : undefined,
+      excerpt: m.excerpt,
+      start: m.start,
+      end: m.end,
+      correction: m.correction,
+      note: m.note,
+    }));
+    dirty = true;
+    renderAll();
+    const flagged = matched.filter((m) => m.unknownCategory).length;
+    const unplaced = matched.filter((m) => m.unplaced).length;
+    replace(
+      formStatus,
+      notice(
+        flagged || unplaced ? 'warning' : 'success',
+        h(
+          'p',
+          null,
+          `${what.charAt(0).toUpperCase()}${what.slice(1)} is loaded into the form. Review and edit before submitting.`,
+        ),
+        flagged ? h('p', null, `${flagged} error(s) use an unknown category: choose one.`) : null,
+        unplaced
+          ? h('p', null, `${unplaced} excerpt(s) were not found exactly: place or delete them.`)
+          : null,
+        taskType === 'task2' && draft.suggestedTopic && !topic
+          ? h(
+              'p',
+              null,
+              `Claude suggested the topic “${draft.suggestedTopic}”, which is not in the list.`,
+            )
+          : null,
+      ),
+    );
+    document.getElementById('form-heading')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   const claudePanel = buildClaudePanel({
     data,
     claudePromptText,
     onParsed: (draft) => {
       lastDraft = draft;
     },
-    onLoad: async (draft, kind) => {
-      const what = kind === 'reconciled' ? 'Claude’s reconciled result' : 'Claude’s draft';
-      if (state.errors.length || CRITERIA.some((c) => state.scores[c] !== null)) {
-        const ok = await confirmDialog({
-          title: `Replace the form with ${what}?`,
-          message:
-            'Scores, feedback and tagged errors in the form will be replaced. Nothing is sent to the student.',
-          confirmLabel: 'Load into form',
-        });
-        if (!ok) return;
-      }
-      const matched = matchClaudeErrors(
-        draft.errors,
-        activeCats.map((c) => ({ id: c.id, label: c.label })),
-        essay.body,
-      );
-      state.scores = { ...draft.scores };
-      state.feedback = { ...draft.feedback };
-      state.generalComment = draft.generalComment;
-      // Task 1 Academic has no topic; only Task 2 takes Claude's suggested topic.
-      const topic =
-        taskType === 'task2'
-          ? matchTopic(
-              draft.suggestedTopic,
-              data.topics.filter((t) => t.active),
-            )
-          : null;
-      if (topic) state.category = { ...state.category, topicId: topic };
-      state.errors = matched.map((m) => ({
-        key: newKey(),
-        categoryId: m.categoryId,
-        unknownLabel: m.unknownCategory ? m.category : undefined,
-        excerpt: m.excerpt,
-        start: m.start,
-        end: m.end,
-        correction: m.correction,
-        note: m.note,
-      }));
-      dirty = true;
-      renderAll();
-      const flagged = matched.filter((m) => m.unknownCategory).length;
-      const unplaced = matched.filter((m) => m.unplaced).length;
-      replace(
-        formStatus,
-        notice(
-          flagged || unplaced ? 'warning' : 'success',
-          h(
-            'p',
-            null,
-            `${what.charAt(0).toUpperCase()}${what.slice(1)} is loaded into the form. Review and edit before submitting.`,
-          ),
-          flagged ? h('p', null, `${flagged} error(s) use an unknown category: choose one.`) : null,
-          unplaced
-            ? h('p', null, `${unplaced} excerpt(s) were not found exactly: place or delete them.`)
-            : null,
-          taskType === 'task2' && draft.suggestedTopic && !topic
-            ? h(
-                'p',
-                null,
-                `Claude suggested the topic “${draft.suggestedTopic}”, which is not in the list.`,
-              )
-            : null,
-        ),
-      );
-      document.getElementById('form-heading')?.scrollIntoView({ behavior: 'smooth' });
-    },
+    onLoad: loadIntoForm,
     onReconcileCopy: async () => {
       const sources = data.sources
         .filter((s) => s.name !== 'Claude' && sourceValues.has(s.id))

@@ -1,5 +1,6 @@
 import type { Route } from '../../router';
 import { addEssayPage } from './addEssay';
+import { aiSetupPage } from './aiSetup';
 import { assignmentDetailPage, assignmentsPage, newAssignmentPage } from './assignments';
 import { calibrationPage } from './calibration';
 import { claudeSetupPage } from './claudeSetup';
@@ -43,5 +44,6 @@ export const routes: Route[] = [
   },
   { pattern: '/admin/lists', guard: 'admin', title: 'Lists', render: listsPage },
   { pattern: '/admin/claude', guard: 'admin', title: 'Claude setup', render: claudeSetupPage },
+  { pattern: '/admin/ai', guard: 'admin', title: 'Chấm tự động', render: aiSetupPage },
   { pattern: '/admin/emails', guard: 'admin', title: 'Email', render: emailsPage },
 ];

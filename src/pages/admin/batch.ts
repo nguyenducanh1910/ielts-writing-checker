@@ -185,14 +185,38 @@ export function batchScoring(items: QueueItem[], reload: () => void) {
         replace(copyStatus);
         const refreshBtn = h('button', { type: 'button', class: 'btn' }, 'Refresh the queue');
         refreshBtn.addEventListener('click', reload);
+        const aiBtn = h(
+          'button',
+          { type: 'button', class: 'btn btn-primary' },
+          `Gemini chấm & đối chiếu ${res.saved.length} bài này`,
+        );
+        const aiStatus = h('span', { 'aria-live': 'polite' });
+        aiBtn.addEventListener('click', () =>
+          busy(aiBtn, 'Đang xếp hàng…', async () => {
+            try {
+              const r = await api<{ queued: number }>('admin.ai.queue', {
+                essayIds: res.saved.map((x) => x.essayId),
+              });
+              replace(aiStatus, ` Đã xếp ${r.queued} bài, hệ thống chấm nền (1–2 phút mỗi bài).`);
+              aiBtn.disabled = true;
+            } catch (err) {
+              replace(aiStatus, errorBox(err));
+            }
+          }),
+        );
         replace(
           result,
           notice(
             'success',
             h('p', null, h('strong', null, `Saved ${ok.length} Claude draft(s).`)),
             h('ul', null, ...ok),
-            h('p', null, 'Open each essay to load its draft into the form, review and send.'),
-            refreshBtn,
+            h(
+              'p',
+              null,
+              'Bấm nút dưới để Gemini chấm độc lập và đối chiếu (miễn phí), hoặc mở từng bài để tự làm. Kết quả được điền vào form để thầy duyệt rồi gửi.',
+            ),
+            h('div', { class: 'actions' }, aiBtn, refreshBtn),
+            aiStatus,
           ),
           problems,
         );

@@ -23,6 +23,34 @@ export interface QueueItem {
   uploadedByAdmin: boolean;
   /** Scored essays only. */
   activity: ResultActivity | null;
+  /** Latest automatic scoring run (Gemini), if any. */
+  ai?: AiJobView | null;
+}
+
+export interface AiJobView {
+  status: 'queued' | 'running' | 'done' | 'failed' | string;
+  error: string;
+  updatedAt: string;
+}
+
+export interface AiSettings {
+  hasGeminiKey: boolean;
+  geminiModel: string;
+  rubric: string;
+  samplesPerPrompt: number;
+  sampleCount: number;
+  jobsReady: boolean;
+  jobs: { queued: number; running: number; done: number; failed: number };
+}
+
+export interface AiScoreResult {
+  essayId: string;
+  claudeDraft: import('../../../shared/claude').ClaudeDraft;
+  reconciled: import('../../../shared/claude').ClaudeDraft | null;
+  reconcileText: string;
+  gemini: { scores: Record<string, number>; overall: number; model: string } | null;
+  samples: number;
+  warnings: string[];
 }
 
 export interface QueueResponse {
