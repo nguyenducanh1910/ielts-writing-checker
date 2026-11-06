@@ -1,0 +1,100 @@
+name: Deploy Apps Script (Writing + Lớp học)
+
+# Pushes the two Apps Script back ends and moves their web-app deployments to a new version
+# (the URLs stay the same). Runs when back-end code changes on main, or by hand.
+# Needs the repository secret CLASPRC_JSON (the content of ~/.clasprc.json after
+# `npx @google/clasp@3.4.1 login`); without it the job only prints a notice.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps-script/**'
+      - 'shared/**'
+      - 'classroom/**'
+      - 'scripts/deploy-gas.mjs'
+      - 'scripts/gas-deploy-lib.mjs'
+      - 'scripts/backend-version.mjs'
+      - '.github/workflows/deploy-gas.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Project to deploy'
+        type: choice
+        options: [both, writing, classroom]
+        default: both
+      dry_run:
+        description: 'Only check, do not deploy'
+        type: boolean
+        default: false
+      force:
+        description: 'Deploy a new version even if the code is unchanged'
+        type: boolean
+        default: false
+      allow_manifest_change:
+        description: 'Allow a different appsscript.json (permissions) than the live project'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never cancel a deployment half way.
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HAS_CREDS: ${{ secrets.CLASPRC_JSON != '' }}
+    steps:
+      - name: No credentials yet
+        if: env.HAS_CREDS != 'true'
+        run: echo "::notice::CLASPRC_JSON secret is not set, so nothing was deployed. See docs/TRIEN_KHAI_TU_DONG.md."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_CREDS == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_CREDS == 'true'
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install, check and build
+        if: env.HAS_CREDS == 'true'
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run gas:build
+          npm install --global @google/clasp@3.4.1
+
+      - name: Deploy
+        if: env.HAS_CREDS == 'true'
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          flags=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then flags="$flags --dry-run"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then flags="$flags --force"; fi
+          if [ "${{ inputs.allow_manifest_change }}" = "true" ]; then flags="$flags --allow-manifest-change"; fi
+          node scripts/deploy-gas.mjs "${{ inputs.target || 'both' }}" $flags
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$HOME/.clasprc.json"
+
+      - name: Keep a copy of what was live before
+        if: always() && env.HAS_CREDS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: apps-script-before-${{ github.run_number }}
+          path: .gas-deploy/*/remote
+          include-hidden-files: false
+          if-no-files-found: ignore
+          retention-days: 90
