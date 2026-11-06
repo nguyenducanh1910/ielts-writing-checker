@@ -135,7 +135,12 @@ test('teacher sees one student’s progress; the student reviews wrong answers',
 
   await page.getByRole('button', { name: 'Log out' }).click();
   await page.goto(await loginLink(page, 'demo.binh@example.com'));
-  await page.getByRole('link', { name: 'Tiến bộ' }).click();
+  // Students start on their class page, which also links to "Tiến bộ & ôn câu sai".
+  await expect(page.getByRole('heading', { name: 'Lớp học của em' })).toBeVisible();
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('link', { name: 'Tiến bộ' })
+    .click();
   await expect(page.getByRole('heading', { name: 'Tiến bộ & ôn tập' })).toBeVisible();
   const review = page.getByTestId('review');
   const item = review.locator('.cl-review-item').first();
