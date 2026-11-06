@@ -198,7 +198,7 @@ describe('before setup() adds the new columns', () => {
     const sheet = app.svc.spreadsheet.getSheetByName('Essays')!;
     const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const first = header.indexOf('practice_required') + 1;
-    expect(header.slice(first - 1)).toEqual([
+    expect(header.slice(first - 1, first + 2)).toEqual([
       'practice_required',
       'practice_done_at',
       'result_viewed_at',

@@ -78,6 +78,7 @@ describe('setup() on a Sheet from an earlier version', () => {
       'Essays.practice_required',
       'Essays.practice_done_at',
       'Essays.result_viewed_at',
+      'Essays.withdrawn_at',
     ]);
     expect(sheet.getRange(1, 1, 1, SCHEMA.Essays.length).getValues()[0]).toEqual([
       ...SCHEMA.Essays,
