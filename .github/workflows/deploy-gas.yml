@@ -95,6 +95,6 @@ jobs:
         with:
           name: apps-script-before-${{ github.run_number }}
           path: .gas-deploy/*/remote
-          include-hidden-files: false
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 90
