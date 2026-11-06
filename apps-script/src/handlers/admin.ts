@@ -91,6 +91,7 @@ function queue(ctx: Ctx, payload: unknown) {
   const items = ctx.db
     .find('Essays', (e) => {
       if (e.status === 'draft') return false;
+      if (e.withdrawn_at && e.status !== 'scored') return false;
       if (status !== 'scored' && status !== 'all' && e.status === 'scored') return false;
       if (taskType && e.task_type !== taskType) return false;
       if (studentId && e.student_id !== studentId) return false;
@@ -229,6 +230,7 @@ function adminEssay(ctx: Ctx, payload: unknown) {
       driveFolderId: essay.drive_folder_id,
       queueStatus: queueStatus(ctx, essay),
       startedAt: essay.started_at || null,
+      withdrawnAt: essay.withdrawn_at || null,
     },
     student: student
       ? { id: student.id, name: student.name, email: student.email, className: classLabel }
@@ -314,6 +316,7 @@ function batchPrompt(ctx: Ctx, payload: unknown) {
     essays: essayIds.map((id) => {
       const essay = loadEssay(ctx, id);
       if (essay.status === 'draft') throw new ApiError('conflict', 'Drafts cannot be scored.');
+      if (essay.withdrawn_at) throw new ApiError('conflict', 'Bài này đã gỡ khỏi hàng chờ.');
       if (essay.task_type !== 'task2') {
         throw new ApiError(
           'conflict',
@@ -510,6 +513,23 @@ function toggleSample(ctx: Ctx, payload: unknown) {
   return { sample };
 }
 
+/**
+ * Take an essay out of the marking queue without scoring it (e.g. old homework sent by the class
+ * system), or put it back. Scored essays cannot be withdrawn.
+ */
+function withdrawEssay(ctx: Ctx, payload: unknown) {
+  const r = new Reader(payload);
+  const essayId = r.id('essayId');
+  const restore = r.has('restore') ? r.bool('restore') : false;
+  r.done();
+  const essay = loadEssay(ctx, essayId);
+  if (essay.status === 'draft') throw new ApiError('conflict', 'Bài nháp chưa nộp.');
+  if (essay.status === 'scored') throw new ApiError('conflict', 'Bài đã gửi điểm, không gỡ được.');
+  const withdrawnAt = restore ? '' : ctx.now.toISOString();
+  ctx.db.update('Essays', (e) => e.id === essay.id, { withdrawn_at: withdrawnAt });
+  return { withdrawnAt: withdrawnAt || null };
+}
+
 export const adminActions: Record<string, ActionDef> = {
   'admin.queue': { write: false, handler: (ctx, p) => queue(ctx, p) },
   'admin.essay': { write: false, handler: (ctx, p) => adminEssay(ctx, p) },
@@ -533,4 +553,5 @@ export const adminActions: Record<string, ActionDef> = {
   'admin.saveSourceFeedback': { write: true, handler: (ctx, p) => saveSourceFeedback(ctx, p) },
   'admin.retryDrive': { write: true, handler: (ctx, p) => retryDrive(ctx, p) },
   'admin.setSample': { write: true, handler: (ctx, p) => toggleSample(ctx, p) },
+  'admin.essays.withdraw': { write: true, handler: (ctx, p) => withdrawEssay(ctx, p) },
 };
