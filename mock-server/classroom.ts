@@ -376,6 +376,7 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
 
   const teacher: Record<string, (p: Json) => unknown> = {
     'system.health': () => health(),
+    'writing.scoresNow': () => ({ message: 'Không có điểm mới.' }),
     'student.list': () => ({
       students: CLASSES.flatMap((c) =>
         NAMES[c.id].map(([name, email]) => ({ email, name, className: c.name })),
