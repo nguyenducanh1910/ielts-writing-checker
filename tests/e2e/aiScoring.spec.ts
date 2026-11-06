@@ -106,8 +106,9 @@ test('Gemini scores and reconciles with the pasted Claude draft (no API cost)', 
   await expect(page.locator('mark.err')).toHaveCount(1);
 
   // ---- Queue: the essay shows its Gemini result (save the form first) ----
+  // Wait for the server's answer (not any "saved" text) so the unsaved-changes guard is cleared.
   await page.getByRole('button', { name: 'Save draft' }).click();
-  await expect(page.getByText(/saved/i).first()).toBeVisible();
+  await expect(page.getByText('Draft saved. Nothing has been sent to the student.')).toBeVisible();
   await page.goto('#/admin');
   await expect(
     page.getByRole('row', { name: /Nguyen Van An/ }).getByText('Gemini: đã đối chiếu'),
