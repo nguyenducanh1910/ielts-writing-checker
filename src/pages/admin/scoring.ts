@@ -964,6 +964,8 @@ function buildScoring(
       try {
         await api('admin.essays.withdraw', { essayId: essay.id, restore: withdrawn });
         dirty = false;
+        // The class system updates the row ("đã gỡ khỏi hàng chờ" / "chờ chấm") right away.
+        if (classroomEnabled()) void classroom('writing.scoresNow').catch(() => undefined);
         if (withdrawn) {
           toast('Đã đưa bài lại vào hàng chờ.');
           reload();
