@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-06.5';
+const CLASSROOM_VERSION = '2026-11-07.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -203,8 +203,106 @@ function runMenu_(label, fn) {
 // ---------------------------------------------------------------------------
 // CÁC JOB CHẠY TỰ ĐỘNG
 // ---------------------------------------------------------------------------
-// Tài khoản Gmail chỉ được chạy tự động ~90 phút/ngày: mỗi lượt nhanh ~30 giây nên 15 phút/lần là vừa.
-const QUICK_SYNC_MINUTES = 15;
+// ---- Thời gian chạy tự động trong ngày (Gmail: ~90 phút/ngày cho mọi trình kích hoạt) ----
+const RUNTIME_LIMIT_MIN = 90;
+const RUNTIME_WARN_MIN = 70; // từ mức này: báo thầy + tạm dừng lượt cập nhật nhanh (lượt mỗi giờ vẫn chạy)
+
+function runtimeKey_(d) { return 'RT_' + Utilities.formatDate(d || new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'); }
+function runtimeTodayMs_() { return Number(PropertiesService.getScriptProperties().getProperty(runtimeKey_()) || 0); }
+
+/** Chạy 1 lượt tự động và cộng thời gian chạy vào tổng của ngày. */
+function trackRun_(fn) {
+  const t0 = Date.now();
+  try { return fn(); } finally { try { addRuntime_(Date.now() - t0); } catch (e) { /* bỏ qua */ } }
+}
+
+function addRuntime_(ms) {
+  const p = PropertiesService.getScriptProperties();
+  const k = runtimeKey_();
+  const total = Number(p.getProperty(k) || 0) + ms;
+  p.setProperty(k, String(total));
+  if (total >= RUNTIME_WARN_MIN * 60000 && !p.getProperty(k + '_WARNED')) {
+    p.setProperty(k + '_WARNED', '1');
+    const msg = 'Hôm nay hệ thống đã chạy tự động khoảng ' + Math.round(total / 60000) + ' phút (giới hạn của Google cho tài khoản Gmail khoảng ' + RUNTIME_LIMIT_MIN +
+      ' phút/ngày). Hệ thống tạm dừng lượt cập nhật nhanh tới hết ngày; lượt đồng bộ mỗi giờ vẫn chạy. Nếu tình trạng này lặp lại, có thể bớt lớp theo dõi hoặc giảm số bài chấm AI mỗi giờ.';
+    log_('Sắp hết thời gian chạy', msg);
+    try { MailApp.sendEmail({ to: getConfig_().reportEmail, subject: '⚠ Hệ thống lớp học sắp hết thời gian chạy tự động hôm nay', body: msg }); } catch (e) { /* bỏ qua */ }
+  }
+}
+
+/** Xoá số liệu thời gian chạy cũ hơn 7 ngày. */
+function pruneRuntime_() {
+  const p = PropertiesService.getScriptProperties();
+  const keep = {};
+  for (let i = 0; i < 7; i++) keep[runtimeKey_(new Date(Date.now() - i * 86400000))] = true;
+  Object.keys(p.getProperties()).forEach(k => {
+    if (/^RT_\d{8}/.test(k) && !keep[k.slice(0, 11)]) p.deleteProperty(k);
+  });
+}
+
+// ---- Sao lưu hằng tuần: chép sheet Lớp học + sheet dữ liệu web Writing vào thư mục Drive, giữ 8 bản gần nhất ----
+const BACKUP_FOLDER_NAME = 'Sao lưu IELTS Classroom';
+const BACKUP_KEEP = 8;
+
+function backupFolder_() {
+  const p = PropertiesService.getScriptProperties();
+  const id = p.getProperty('BACKUP_FOLDER_ID');
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* tạo lại */ } }
+  const it = DriveApp.getRootFolder().getFoldersByName(BACKUP_FOLDER_NAME);
+  const folder = it.hasNext() ? it.next() : DriveApp.getRootFolder().createFolder(BACKUP_FOLDER_NAME);
+  p.setProperty('BACKUP_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+/** Mỗi giờ gọi: chỉ sao lưu ban đêm (1–5h) và khi bản gần nhất đã cũ hơn 7 ngày. */
+function backupJob_(force) {
+  const p = PropertiesService.getScriptProperties();
+  const last = Number(p.getProperty('LAST_BACKUP_MS') || 0);
+  const hour = Number(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'H'));
+  if (!force && (Date.now() - last < 7 * 86400000 - 3600000 || hour < 1 || hour > 5)) return '';
+  const folder = backupFolder_();
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH.mm');
+  const ss = SpreadsheetApp.getActive();
+  const done = [];
+  DriveApp.getFileById(ss.getId()).makeCopy('Sao lưu ' + stamp + ' · Lớp học · ' + ss.getName(), folder);
+  done.push('sheet Lớp học');
+  const conn = writingConn_();
+  if (conn && conn.sheetId) {
+    DriveApp.getFileById(conn.sheetId).makeCopy('Sao lưu ' + stamp + ' · Dữ liệu web Writing', folder);
+    done.push('dữ liệu web Writing');
+  }
+  const removed = pruneBackups_(folder);
+  p.setProperty('LAST_BACKUP_MS', String(Date.now()));
+  return 'Sao lưu ' + done.join(' + ') + ' vào thư mục "' + BACKUP_FOLDER_NAME + '"' + (removed ? ' (chuyển ' + removed + ' bản cũ vào thùng rác)' : '');
+}
+
+/** Giữ BACKUP_KEEP bản mới nhất của mỗi loại; bản cũ hơn vào thùng rác (khôi phục được trong 30 ngày). */
+function pruneBackups_(folder) {
+  const groups = { 'Lớp học': [], 'Dữ liệu web Writing': [] };
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    const n = f.getName();
+    if (n.indexOf('Sao lưu ') !== 0) continue;
+    const k = n.indexOf('· Dữ liệu web Writing') >= 0 ? 'Dữ liệu web Writing' : n.indexOf('· Lớp học') >= 0 ? 'Lớp học' : '';
+    if (k) groups[k].push(f);
+  }
+  let removed = 0;
+  Object.keys(groups).forEach(k => {
+    groups[k].sort((a, b) => b.getDateCreated() - a.getDateCreated()).slice(BACKUP_KEEP).forEach(f => { f.setTrashed(true); removed++; });
+  });
+  return removed;
+}
+
+/** Chạy từ trình chỉnh sửa: sao lưu ngay (không chờ tới đêm Chủ nhật). */
+function saoLuuNgay() {
+  const r = backupJob_(true);
+  log_('Sao lưu', r);
+  return r;
+}
+
+// Mỗi lượt nhanh ~10 giây (chỉ bài tập đang mở, danh sách HS lưu tạm 6 giờ) nên 10 phút/lần vẫn trong giới hạn.
+const QUICK_SYNC_MINUTES = 10;
 
 /** Bật lượt cập nhật nhanh nếu chưa có (bản cũ chỉ có lượt mỗi giờ). */
 function ensureQuickSyncTrigger_() {
@@ -218,9 +316,11 @@ function ensureQuickSyncTrigger_() {
 }
 
 /** Mỗi 15 phút: lấy bài HS vừa nộp trên Classroom (chỉ bài tập đang mở) rồi chấm phần chấm được ngay. */
-function quickSyncJob() {
+function quickSyncJob() { return trackRun_(quickSyncJob_); }
+function quickSyncJob_() {
   const hour = Number(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'H'));
   if (hour < 6) return; // đêm khuya: để lượt mỗi giờ lo, tiết kiệm thời gian chạy trong ngày
+  if (runtimeTodayMs_() >= RUNTIME_WARN_MIN * 60000) return; // sắp hết thời gian chạy trong ngày: chỉ còn lượt mỗi giờ
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(2000)) return; // lượt khác đang chạy: lần sau
   try {
@@ -250,13 +350,16 @@ function syncNow_() {
   }
 }
 
-function hourlyJob() {
+function hourlyJob() { return trackRun_(hourlyJob_); }
+function hourlyJob_() {
   safeStep_('Cập nhật nhanh', ensureQuickSyncTrigger_);
   withLock_(() => {
     const n = safeStep_('Lớp mới', detectNewCourses_);
     const a = syncAll_();
     const h = safeStep_('HS mới', syncNewStudents_);
     safeStep_('Mẫu Speaking', backfillSpeakingSamples_);
+    const bk = safeStep_('Sao lưu', () => backupJob_(false));
+    if (bk) log_('Sao lưu', bk);
     const b = gradeAll_();
     const w = syncWritingScores_();
     const c = getConfig_().autoSend ? sendApprovedFeedback_() : '';
@@ -266,15 +369,18 @@ function hourlyJob() {
   });
 }
 
-function dailyReminderJob() {
+function dailyReminderJob() { return trackRun_(dailyReminderJob_); }
+function dailyReminderJob_() {
   withLock_(() => { syncAll_(); log_('Nhắc nhở', sendReminders_()); });
 }
 
-function dailyReportJob() {
+function dailyReportJob() { return trackRun_(dailyReportJob_); }
+function dailyReportJob_() {
   withLock_(() => {
     const cfg = getConfig_();
     if (cfg.penaltyOn && cfg.penaltyTabDay > 0) { try { ensurePenaltyMonthTabs_(); } catch (e) { log_('Lỗi tạo tab tháng mới', e.message); } }
     log_('Báo cáo', sendTeacherReport_());
+    try { pruneRuntime_(); } catch (e) { /* bỏ qua */ }
     try { const r = sendWeeklyReview_(cfg); if (r) log_('Ôn tập cuối tuần', r); } catch (e) { log_('Lỗi email ôn tập', e.message); }
   });
 }
@@ -602,19 +708,27 @@ function syncAll_(opts) {
   const courseSh = sheet_(SH.COURSES);
   const allCourseRows = readTable_(SH.COURSES, COURSE_HEADERS).rows;
   const sprops = PropertiesService.getScriptProperties().getProperties();
-  oldWorkOff_(courses, cwT, sprops);
+  if (!opts.activeOnly) oldWorkOff_(courses, cwT, sprops);
+  const cache = CacheService.getScriptCache();
 
   courses.forEach(course => {
-    const students = {};
-    listAll_(tok => Classroom.Courses.Students.list(course.id, { pageSize: 100, pageToken: tok }), 'students')
-      .forEach(st => {
-        students[st.userId] = {
-          name: (st.profile && st.profile.name && st.profile.name.fullName) || st.userId,
-          email: (st.profile && st.profile.emailAddress) || '',
-        };
-      });
+    // Danh sách HS: lượt cập nhật nhanh dùng bản lưu tạm (6 giờ); lượt mỗi giờ luôn lấy mới
+    let students = null;
+    const stKey = 'st_' + course.id;
+    if (opts.activeOnly) { try { students = JSON.parse(cache.get(stKey) || 'null'); } catch (e) { students = null; } }
+    if (!students) {
+      students = {};
+      listAll_(tok => Classroom.Courses.Students.list(course.id, { pageSize: 100, pageToken: tok }), 'students')
+        .forEach(st => {
+          students[st.userId] = {
+            name: (st.profile && st.profile.name && st.profile.name.fullName) || st.userId,
+            email: (st.profile && st.profile.emailAddress) || '',
+          };
+        });
+      try { cache.put(stKey, JSON.stringify(students), 21600); } catch (e) { /* lớp quá lớn: không lưu tạm */ }
+    }
     const rowIdx = allCourseRows.findIndex(r => String(r[4]) === course.id);
-    if (rowIdx >= 0) courseSh.getRange(rowIdx + 2, 4).setValue(Object.keys(students).length);
+    if (rowIdx >= 0 && !opts.activeOnly) courseSh.getRange(rowIdx + 2, 4).setValue(Object.keys(students).length);
 
     const works = listAll_(tok => Classroom.Courses.CourseWork.list(course.id, { pageSize: 100, pageToken: tok }), 'courseWork')
       .filter(w => {
@@ -717,7 +831,7 @@ function syncAll_(opts) {
     cwT.sh.getRange(start, C['Chấm tự động'] + 1, newCw.length, 1).setValues(newCw.map(r => [r[C['Chấm tự động']]]));
   }
   const skillRule = SpreadsheetApp.newDataValidation().requireValueInList(SKILLS, true).build();
-  if (cwT.sh.getLastRow() > 1) {
+  if (cwT.sh.getLastRow() > 1 && (!opts.activeOnly || newCw.length)) {
     cwT.sh.getRange(2, C['Kỹ năng'] + 1, cwT.sh.getLastRow() - 1, 1).setDataValidation(skillRule);
     const typeLabels = Object.keys(WRITING_TYPES.task1_academic).concat(Object.keys(WRITING_TYPES.task2));
     cwT.sh.getRange(2, C['Dạng bài Writing'] + 1, cwT.sh.getLastRow() - 1, 1)
@@ -733,7 +847,7 @@ function syncAll_(opts) {
     subT.sh.getRange(start, S['Duyệt gửi'] + 1, newSub.length, 1).insertCheckboxes();
   }
 
-  buildOverview_();
+  if (!opts.activeOnly || newSub.length || newCw.length || nChanged) buildOverview_();
   return (opts.activeOnly ? 'Cập nhật nhanh ' : 'Đồng bộ ') + courses.length + ' lớp, ' + nWork + ' bài tập, ' + nSub + ' lượt nộp (' + newSub.length + ' mới' +
     (nChanged ? ', ' + nChanged + ' đổi trạng thái' : '') + ').';
 }
@@ -1773,7 +1887,8 @@ function scheduleAiRetry_() {
 }
 
 /** Lượt chấm lại khi Gemini quá tải (chỉ chấm, không đồng bộ lại lớp). */
-function aiRetryJob() {
+function aiRetryJob() { return trackRun_(aiRetryJob_); }
+function aiRetryJob_() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'aiRetryJob').forEach(t => ScriptApp.deleteTrigger(t));
   try {
     withLock_(() => {
@@ -2225,7 +2340,8 @@ function scheduleWritingSync_() {
 }
 
 /** Lượt lấy điểm Writing được hẹn khi hệ thống đang bận. */
-function writingSyncJob() {
+function writingSyncJob() { return trackRun_(writingSyncJob_); }
+function writingSyncJob_() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'writingSyncJob').forEach(t => ScriptApp.deleteTrigger(t));
   try {
     withLock_(() => { const w = syncWritingScores_(); if (w) log_('Lấy điểm Writing', w); });
@@ -5193,6 +5309,8 @@ function portalOverview_() {
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
     classes: courses.map(c => ({ id: c.id, name: c.name, section: c.section, link: c.link, students: Object.keys(students[c.id] || {}).length, hasPenaltyFile: !!c.penaltyLink })),
     todo, assignments, log, health: lastHealth_(), version: CLASSROOM_VERSION,
+    runtime: { usedMin: Math.round(runtimeTodayMs_() / 60000), limitMin: RUNTIME_LIMIT_MIN, warnMin: RUNTIME_WARN_MIN,
+      lastBackup: PropertiesService.getScriptProperties().getProperty('LAST_BACKUP_MS') ? new Date(Number(PropertiesService.getScriptProperties().getProperty('LAST_BACKUP_MS'))).toISOString() : '' },
     newClasses: pNewCourses_(),
     aiDownSince: PropertiesService.getScriptProperties().getProperty('AI_DOWN_SINCE') || '',
     todoItems: (function () { const tl = todoLists_(subs, cfg); return { manual: tl.manual.slice(0, 30), formPending: tl.formPending.slice(0, 30) }; })(),
