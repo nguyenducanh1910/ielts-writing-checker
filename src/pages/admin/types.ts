@@ -84,6 +84,8 @@ export interface AdminEssayResponse {
     driveStatus: string;
     driveFolderId: string;
     queueStatus: string;
+    /** Taken out of the marking queue by the teacher (not scored). */
+    withdrawnAt?: string | null;
   };
   student: { id: string; name: string; email: string; className: string } | null;
   assignment: { id: string; title: string } | null;

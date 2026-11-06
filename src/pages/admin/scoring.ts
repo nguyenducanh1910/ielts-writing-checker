@@ -938,10 +938,55 @@ function buildScoring(
     });
   });
 
+  // Old homework the teacher does not want to score: take it out of the queue (or put it back).
+  const withdrawn = Boolean(data.essay.withdrawnAt);
+  const withdrawStatus = h('div', { 'aria-live': 'polite' });
+  const withdrawBtn =
+    essay.status === 'scored'
+      ? null
+      : h(
+          'button',
+          { type: 'button', class: 'btn' },
+          withdrawn ? 'Đưa lại vào hàng chờ' : 'Bỏ khỏi hàng chờ (không chấm)',
+        );
+  withdrawBtn?.addEventListener('click', async () => {
+    if (
+      !withdrawn &&
+      !(await confirmDialog({
+        title: 'Bỏ bài này khỏi hàng chờ?',
+        message:
+          'Bài sẽ không hiện trong hàng chờ chấm nữa và không được chấm. Hệ thống lớp học sẽ ghi "đã gỡ khỏi hàng chờ". Có thể đưa lại vào hàng chờ sau.',
+        confirmLabel: 'Bỏ khỏi hàng chờ',
+      }))
+    )
+      return;
+    await busy(withdrawBtn, 'Đang lưu…', async () => {
+      try {
+        await api('admin.essays.withdraw', { essayId: essay.id, restore: withdrawn });
+        dirty = false;
+        if (withdrawn) {
+          toast('Đã đưa bài lại vào hàng chờ.');
+          reload();
+        } else {
+          toast('Đã bỏ bài khỏi hàng chờ.');
+          navigate('/admin');
+        }
+      } catch (err) {
+        replace(withdrawStatus, errorBox(err));
+      }
+    });
+  });
+
   const formPanel = h(
     'section',
     { 'aria-labelledby': 'form-heading' },
     h('h2', { id: 'form-heading' }, 'Score'),
+    withdrawn
+      ? notice(
+          'warning',
+          'Bài này đã được bỏ khỏi hàng chờ (không chấm). Bấm "Đưa lại vào hàng chờ" nếu muốn chấm.',
+        )
+      : null,
     reconcileView,
     h('div', { class: 'actions' }, copyBtn, pasteBtn, aiBtn),
     aiStatus,
@@ -973,6 +1018,8 @@ function buildScoring(
         )
       : null,
     h('div', { class: 'actions sticky-actions' }, saveBtn, submitBtn),
+    withdrawBtn ? h('div', { class: 'actions' }, withdrawBtn) : null,
+    withdrawStatus,
     formStatus,
     emailEventsBox(data, reload),
   );
