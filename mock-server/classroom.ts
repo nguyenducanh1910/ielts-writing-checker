@@ -421,6 +421,12 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
       const now = Date.now();
       return {
         health: health(),
+        runtime: {
+          usedMin: 23,
+          limitMin: 90,
+          warnMin: 70,
+          lastBackup: new Date(now - 2 * 86400e3).toISOString(),
+        },
         version: CLASSROOM_VERSION,
         teacherName: 'Thầy Đức Anh',
         sheetUrl: 'https://docs.google.com/spreadsheets/d/mock/edit',
