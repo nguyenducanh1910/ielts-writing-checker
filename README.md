@@ -309,3 +309,12 @@ tests/unit/          Vitest; tests/e2e/ Playwright
 ```
 
 See [DECISIONS.md](DECISIONS.md) for the defaults chosen where the spec left room.
+
+## Class system (Google Classroom)
+
+`classroom/Code.gs` is the Apps Script project bound to the class Google Sheet (sync from Google
+Classroom, R/L grading, Speaking AI, reminders, penalty files). It is plain Apps Script: paste it
+into the bound project's editor, save, then deploy a new version of its web app. Its
+`CLASSROOM_VERSION` must equal `CLASSROOM_VERSION` in `src/versions.ts` (a unit test checks this).
+Setup and day-to-day use for teachers: `classroom/HUONG_DAN.md`. No keys are stored in the code;
+API keys live in the project's Script Properties.
