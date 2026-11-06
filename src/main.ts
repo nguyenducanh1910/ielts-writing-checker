@@ -31,12 +31,12 @@ const STUDENT_NAV: Array<[string, string]> = [
         ['/lop-cua-em/tien-bo', 'Tiến bộ'],
       ] as Array<[string, string]>)
     : []),
-  ['/essays', 'My essays'],
-  ['/new', 'Write'],
-  ['/assigned', 'Assigned to me'],
-  ['/dashboard', 'Dashboard'],
-  ['/topics', 'Topics'],
-  ['/settings', 'Settings'],
+  ['/essays', 'Bài Writing'],
+  ['/new', 'Viết bài'],
+  ['/assigned', 'Bài thầy giao'],
+  ['/dashboard', 'Thống kê'],
+  ['/topics', 'Chủ đề'],
+  ['/settings', 'Cài đặt'],
 ];
 
 const ADMIN_NAV: Array<[string, string]> = [
