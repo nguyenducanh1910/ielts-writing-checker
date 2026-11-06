@@ -193,7 +193,7 @@ function sourceFeedbackView(row: Row<'SourceFeedback'>) {
   };
 }
 
-function latestDraft(ctx: Ctx, essayId: string, kind: 'initial' | 'reconcile') {
+function latestDraft(ctx: Ctx, essayId: string, kind: 'initial' | 'reconcile' | 'ai') {
   const d = ctx.db
     .find('Drafts', (x) => x.essay_id === essayId && x.kind === kind)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
@@ -247,6 +247,8 @@ function adminEssay(ctx: Ctx, payload: unknown) {
         }
       : null,
     claudeDraft: latestDraft(ctx, essay.id, 'initial'),
+    /** Gemini's own draft (essays scored by AI without a Claude draft). */
+    aiDraft: latestDraft(ctx, essay.id, 'ai'),
     reconcile: latestDraft(ctx, essay.id, 'reconcile'),
     sourceFeedback: ctx.db
       .find('SourceFeedback', (x) => x.essay_id === essay.id)

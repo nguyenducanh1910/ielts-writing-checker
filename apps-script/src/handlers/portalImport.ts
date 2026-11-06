@@ -19,6 +19,7 @@ import { adminTimezone, ApiError, appUrl, bool, type Ctx } from '../context';
 import { saveUploadedImage } from '../drive';
 import type { ActionDef } from '../router';
 import { Reader } from '../validate';
+import { queueAutoDraft } from '../aiScoring';
 import { finalizeSubmission, MAX_PRACTICE_SECONDS } from './essays';
 
 /** Compares two strings in time that does not depend on where they first differ. */
@@ -170,7 +171,13 @@ function importEssay(ctx: Ctx, payload: unknown) {
     autoSubmitted,
     at: submittedAt || undefined,
   });
-  return { essayId: submitted.id, duplicate: false, driveStatus: submitted.drive_sync_status };
+  const aiQueued = queueAutoDraft(ctx, submitted.id);
+  return {
+    essayId: submitted.id,
+    duplicate: false,
+    driveStatus: submitted.drive_sync_status,
+    aiQueued,
+  };
 }
 
 /** Students sent per call (a big class plus room for retries). */
