@@ -71,7 +71,25 @@ function assignmentCard(a: OverviewAssignment): HTMLElement {
 }
 
 /** "Hệ thống": result of the daily health check, with a button to run it now. */
-export function healthCard(initial: Health | null | undefined): HTMLElement {
+function runtimeLine(rt: Overview['runtime']): Child {
+  if (!rt) return null;
+  const high = rt.usedMin >= rt.warnMin;
+  return h(
+    'p',
+    { class: high ? 'cl-danger' : 'cl-muted', 'data-testid': 'runtime' },
+    `Chạy tự động hôm nay: khoảng ${rt.usedMin}/${rt.limitMin} phút`,
+    high ? ' — đã tạm dừng lượt cập nhật nhanh tới hết ngày.' : '.',
+    ' ',
+    rt.lastBackup
+      ? `Sao lưu gần nhất: ${viDateTime(rt.lastBackup)}.`
+      : 'Chưa sao lưu lần nào (tự sao lưu đêm Chủ nhật).',
+  );
+}
+
+export function healthCard(
+  initial: Health | null | undefined,
+  runtime?: Overview['runtime'],
+): HTMLElement {
   const body = h('div');
   const show = (x: Health | null | undefined) =>
     replace(
@@ -110,6 +128,7 @@ export function healthCard(initial: Health | null | undefined): HTMLElement {
     { class: 'cl-health', 'data-testid': 'health' },
     h('h2', null, 'Hệ thống'),
     body,
+    runtimeLine(runtime),
     btn,
   );
 }
@@ -269,7 +288,7 @@ function overviewContent(ov: Overview, writing: QueueItem[] | null, reload: () =
       h(
         'aside',
         null,
-        healthCard(ov.health),
+        healthCard(ov.health, ov.runtime),
         h('h2', null, 'Lớp của bạn'),
         refreshClassesButton(reload),
         h(

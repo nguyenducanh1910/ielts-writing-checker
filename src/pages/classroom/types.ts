@@ -28,6 +28,8 @@ export interface OverviewAssignment {
 }
 
 export interface Overview {
+  /** Time automatic runs used today (Google allows Gmail accounts ~90 min a day) and the last backup. */
+  runtime?: { usedMin: number; limitMin: number; warnMin: number; lastBackup: string };
   teacherName: string;
   sheetUrl: string;
   classes: ClassInfo[];
