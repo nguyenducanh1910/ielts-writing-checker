@@ -1761,26 +1761,6 @@ kbd {
 /* ---------------------------------------------------------------------------
    Lớp học (class system) section. Same palette as the Writing pages.
    --------------------------------------------------------------------------- */
-.sector-switch {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 999px;
-  background: rgb(27 67 50 / 10%);
-}
-
-.site-header .sector-switch a {
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-weight: 700;
-  font-size: 0.9rem;
-  text-decoration: none;
-}
-
-.site-header .sector-switch a[aria-current='true'] {
-  background: var(--on-brand);
-  color: var(--brand);
-}
-
 .cl-page h2 {
   font-family: Georgia, 'Times New Roman', serif;
   font-weight: 600;
@@ -2409,6 +2389,10 @@ a.cl-stat:hover {
   flex-basis: 100%;
 }
 
+.cl-part-link {
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .cl-grid {
     grid-template-columns: 1fr;
@@ -2583,4 +2567,62 @@ a.cl-stat:hover {
 }
 .cl-newclass-fields[hidden] {
   display: none;
+}
+
+/* "Công cụ Writing": the less used Writing pages, in a small menu under the main one. */
+.nav-more {
+  position: relative;
+}
+
+.nav-more > summary {
+  display: block;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.nav-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-more > summary::after {
+  content: ' ▾';
+}
+
+.nav-more > summary:hover {
+  background: var(--brand-hover);
+}
+
+.nav-more > summary[aria-current='page'] {
+  background: var(--surface);
+  color: var(--on-brand);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+
+.site-header .nav-more > ul {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  flex-direction: column;
+  min-width: 230px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 15%);
+}
+
+.site-header .nav-more > ul a {
+  border-radius: 10px;
+}
+
+@media (max-width: 720px) {
+  .site-header .nav-more > ul {
+    position: static;
+    box-shadow: none;
+    background: transparent;
+    padding: 0 0 0 12px;
+  }
 }

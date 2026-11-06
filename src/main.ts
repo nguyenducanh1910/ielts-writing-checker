@@ -6,7 +6,7 @@ import { clearSession, getUser } from './session';
 import { authCallbackPage, loginPage, privacyPage, signupPage } from './pages/auth';
 import { routes as studentRoutes } from './pages/student/routes';
 import { routes as adminRoutes } from './pages/admin/routes';
-import { CLASSROOM_NAV, routes as classroomRoutes } from './pages/classroom/routes';
+import { routes as classroomRoutes } from './pages/classroom/routes';
 import { classroomEnabled, setClassroomExpiredHandler } from './classroomApi';
 import { installErrorReporting, reportClientError, showVersionStatus } from './health';
 import { setRenderErrorHandler } from './ui/components';
@@ -25,17 +25,17 @@ addRoutes([
 ]);
 
 const STUDENT_NAV: Array<[string, string]> = [
-  ['/dashboard', 'Dashboard'],
-  ['/essays', 'My essays'],
-  ['/new', 'Write'],
-  ['/assigned', 'Assigned to me'],
-  ['/topics', 'Topics'],
   ...(classroomEnabled()
     ? ([
         ['/lop-cua-em', 'Lớp học'],
         ['/lop-cua-em/tien-bo', 'Tiến bộ'],
       ] as Array<[string, string]>)
     : []),
+  ['/essays', 'My essays'],
+  ['/new', 'Write'],
+  ['/assigned', 'Assigned to me'],
+  ['/dashboard', 'Dashboard'],
+  ['/topics', 'Topics'],
   ['/settings', 'Settings'],
 ];
 
@@ -49,6 +49,28 @@ const ADMIN_NAV: Array<[string, string]> = [
   ['/admin/claude', 'Claude setup'],
   ['/admin/ai', 'Chấm tự động'],
 ];
+
+// With the class system connected, the teacher has one menu: class pages, Writing scoring,
+// and the less used Writing tools under "Công cụ Writing".
+const TEACHER_NAV: Array<[string, string]> = [
+  ['/lop', 'Tổng quan'],
+  ['/lop/bai-nop', 'Bài nộp'],
+  ['/admin', 'Chấm Writing'],
+  ['/lop/giao-bai', 'Giao bài'],
+  ['/lop/ket-qua', 'Kết quả & phạt'],
+  ['/lop/hoc-sinh', 'Học sinh'],
+];
+const WRITING_TOOLS: Array<[string, string]> = [
+  ['/admin/students', 'Học sinh (Writing)'],
+  ['/admin/assignments', 'Đề giao (Writing)'],
+  ['/admin/ai', 'Chấm tự động'],
+  ['/admin/calibration', 'Hiệu chỉnh theo nguồn'],
+  ['/admin/emails', 'Email'],
+  ['/admin/lists', 'Danh sách lỗi'],
+  ['/admin/claude', 'Cài đặt Claude'],
+];
+/** Writing pages reached from the scoring queue count as "Chấm Writing". */
+const SCORING_PAGES = /^\/admin(\/score\/|\/read$|\/essays\/)/;
 
 const app = document.getElementById('app')!;
 const header = h('header', { class: 'site-header' });
@@ -74,32 +96,46 @@ document.querySelector('.skip-link')?.addEventListener('click', (e) => {
 function renderHeader() {
   const user = getUser();
   const { path } = currentPath();
-  // The admin menu has two sections: the class system ("Lớp học") and the Writing site.
-  const inClassroom = path === '/lop' || path.startsWith('/lop/');
-  const items = user
-    ? user.role === 'admin'
-      ? classroomEnabled() && inClassroom
-        ? CLASSROOM_NAV
-        : ADMIN_NAV
-      : STUDENT_NAV
-    : [];
-  const sectors =
-    user?.role === 'admin' && classroomEnabled()
-      ? h(
-          'div',
-          { class: 'sector-switch', role: 'group', 'aria-label': 'Khu vực' },
-          h('a', { href: '#/lop', 'aria-current': inClassroom ? 'true' : null }, 'Lớp học'),
-          h('a', { href: '#/admin', 'aria-current': inClassroom ? null : 'true' }, 'Writing'),
-        )
-      : null;
+  const teacher = user?.role === 'admin';
+  const unified = teacher && classroomEnabled();
+  const items = user ? (teacher ? (unified ? TEACHER_NAV : ADMIN_NAV) : STUDENT_NAV) : [];
+  const isCurrent = (href: string) =>
+    path === href ||
+    (href === '/admin' && SCORING_PAGES.test(path)) ||
+    (href !== '/admin' &&
+      href !== '/new' &&
+      href !== '/lop' &&
+      href !== '/lop-cua-em' &&
+      path.startsWith(`${href}/`));
+  const toolsCurrent = unified && WRITING_TOOLS.some(([href]) => isCurrent(href));
+  const tools = unified
+    ? h(
+        'li',
+        null,
+        h(
+          'details',
+          { class: 'nav-more' },
+          h('summary', { 'aria-current': toolsCurrent ? 'page' : null }, 'Công cụ Writing'),
+          h(
+            'ul',
+            null,
+            ...WRITING_TOOLS.map(([href, label]) =>
+              h(
+                'li',
+                null,
+                h(
+                  'a',
+                  { href: `#${href}`, 'aria-current': isCurrent(href) ? 'page' : null },
+                  label,
+                ),
+              ),
+            ),
+          ),
+        ),
+      )
+    : null;
   const navLink = ([href, label]: [string, string]) => {
-    const current =
-      path === href ||
-      (href !== '/admin' &&
-        href !== '/new' &&
-        href !== '/lop' &&
-        href !== '/lop-cua-em' &&
-        path.startsWith(`${href}/`));
+    const current = isCurrent(href);
     return h(
       'li',
       null,
@@ -124,8 +160,7 @@ function renderHeader() {
   const nav = h(
     'nav',
     { id: 'site-nav', 'aria-label': 'Main' },
-    sectors,
-    h('ul', null, ...items.map(navLink)),
+    h('ul', null, ...items.map(navLink), tools),
     user
       ? h(
           'div',

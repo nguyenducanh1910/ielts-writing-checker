@@ -70,7 +70,8 @@ export function homeFor(): string {
   const user = getUser();
   if (!user) return '/login';
   if (user.role === 'admin') return CLASSROOM_API_URL ? '/lop' : '/admin';
-  return '/dashboard';
+  // Students start on their class page: homework, every result (Writing too) and fines.
+  return CLASSROOM_API_URL ? '/lop-cua-em' : '/dashboard';
 }
 
 let lastHash = location.hash;
