@@ -34,8 +34,8 @@ test('student submits an essay; admin scores it with Claude and an external tool
   await page.getByLabel('Class').selectOption({ label: 'IELTS 7' });
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Sign up' }).click();
-  // Straight into the site, no email needed.
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  // Straight into the site, no email needed: students start on their class page.
+  await expect(page.getByRole('heading', { name: 'Lớp học của em' })).toBeVisible();
 
   // ---- Saves a draft ----
   await page.goto('#/new?mode=practice');
@@ -210,7 +210,7 @@ test('student submits an essay; admin scores it with Claude and an external tool
   await page.getByLabel('Email address').fill(STUDENT_EMAIL);
   await page.getByLabel('Password').fill(STUDENT_PASSWORD);
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lớp học của em' })).toBeVisible();
   await page.goto(essayUrl);
   // ---- The result is locked until the student practises their errors ----
   await expect(page.locator('.band-hero')).toHaveCount(0);

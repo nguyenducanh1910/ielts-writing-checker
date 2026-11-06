@@ -20,7 +20,10 @@ test.beforeEach(async ({ request }) => {
 test('teacher reviews a Speaking result and sends it', async ({ page }) => {
   await page.goto(await loginLink(page, 'admin@example.com'));
   await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
-  await expect(page.getByRole('group', { name: 'Khu vực' })).toBeVisible();
+  // One menu for the class pages and Writing scoring.
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  await expect(nav.getByRole('link', { name: 'Chấm Writing' })).toBeVisible();
+  await expect(nav.getByText('Công cụ Writing')).toBeVisible();
   await page.getByRole('link', { name: /Speaking chờ duyệt/ }).click();
   await expect(page.getByRole('heading', { name: 'Bài nộp' })).toBeVisible();
   const first = page.locator('.cl-sub').first();
@@ -31,9 +34,12 @@ test('teacher reviews a Speaking result and sends it', async ({ page }) => {
   await page.getByRole('button', { name: 'Gửi ngay', exact: true }).click();
   await expect(first.getByText(/Đã gửi cho học sinh lúc/)).toBeVisible();
   await expect(first.getByText('Band 7.5')).toBeVisible();
-  // The Writing section is still one click away.
-  await page.getByRole('link', { name: 'Writing', exact: true }).click();
+  // Writing scoring is in the same menu.
+  await page.getByRole('link', { name: 'Chấm Writing' }).click();
   await expect(page.getByRole('heading', { name: 'Scoring queue' })).toBeVisible();
+  await nav.getByText('Công cụ Writing').click();
+  await nav.getByRole('link', { name: 'Học sinh (Writing)' }).click();
+  await expect(page.getByRole('heading', { name: 'Students' })).toBeVisible();
 });
 
 test('teacher checks an assignment folder before posting it', async ({ page }) => {
@@ -54,6 +60,9 @@ test('student sees only their own class page and no teacher pages', async ({ pag
   await page.getByRole('link', { name: 'Lớp học' }).click();
   await expect(page.getByRole('heading', { name: 'Lớp học của em' })).toBeVisible();
   await expect(page.getByText('Tran Thi Binh · K232 5.5 TM - BTVN')).toBeVisible();
+  // Writing results open on this site with the same login.
+  const essayLink = page.getByRole('link', { name: /Xem bài chữa|Xem bài em đã nộp/ }).first();
+  await expect(essayLink).toHaveAttribute('href', /^#\/essays\/mock-essay-\d+$/);
   await expect(page.getByText('Hoàng Quang Vinh')).toHaveCount(0);
   await page.goto('#/lop');
   await expect(
