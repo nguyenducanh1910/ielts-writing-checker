@@ -79,6 +79,8 @@ export function aiConfig(ctx: Ctx) {
     rubric: setting(ctx, 'ai_rubric', ''),
     samplesPerPrompt: Number.isInteger(n) && n >= 0 ? Math.min(n, MAX_SAMPLES_PER_PROMPT) : 4,
     hasGeminiKey: Boolean(ctx.svc.props.GEMINI_API_KEY),
+    /** Essays from Google Classroom get a Gemini draft as soon as they arrive. */
+    autoDraft: setting(ctx, 'ai_auto_draft', 'on') !== 'off',
   };
 }
 
@@ -217,7 +219,10 @@ function claudeDraftOf(ctx: Ctx, essayId: string): { raw: string; draft: ClaudeD
 
 export interface AiScoreResult {
   essayId: string;
-  claudeDraft: ClaudeDraft;
+  /** Null when Gemini scored alone (no Claude draft pasted): see aiDraft. */
+  claudeDraft: ClaudeDraft | null;
+  /** Gemini's own draft when there was no Claude draft to reconcile with. */
+  aiDraft: ClaudeDraft | null;
   reconciled: ClaudeDraft | null;
   reconcileText: string;
   gemini: { scores: Record<string, number>; overall: number; model: string } | null;
@@ -250,8 +255,8 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
     throw new ApiError('conflict', 'Bài này đã gửi điểm cho học viên: không chấm tự động lại.');
   }
   if (essay.withdrawn_at) throw new ApiError('conflict', 'Bài này đã gỡ khỏi hàng chờ.');
+  // Without a Claude draft Gemini scores alone and its draft goes into the form.
   const claude = claudeDraftOf(ctx0, essayId);
-  if (!claude) throw new ApiError('conflict', NEED_CLAUDE_DRAFT);
   const p = prepare(ctx0, essay);
   const warnings: string[] = [];
   let usage = NO_USAGE;
@@ -316,29 +321,31 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
   // 2: Gemini reconciles both (same conversation: it sees the essay and its own answer).
   let reconciled: ClaudeDraft | null = null;
   let reconcileText = '';
-  const rPrompt = buildGeminiReconcilePrompt({
-    taskType: p.taskType,
-    claudeDraftJson: JSON.stringify(
-      {
-        scores: claude.draft.scores,
-        feedback: claude.draft.feedback,
-        general_comment: claude.draft.generalComment,
-        suggested_topic: claude.draft.suggestedTopic,
-        errors: claude.draft.errors,
-      },
-      null,
-      2,
-    ),
-    geminiDraftJson: geminiRaw,
-    claudeBias: p.claudeBias,
-    geminiBias: p.geminiBias,
-  });
-  const r2 = ask(model, [
-    firstTurn,
-    { role: 'model', text: geminiRaw },
-    { role: 'user', text: rPrompt },
-  ]);
-  if (!r2.ok) {
+  const rPrompt = claude
+    ? buildGeminiReconcilePrompt({
+        taskType: p.taskType,
+        claudeDraftJson: JSON.stringify(
+          {
+            scores: claude.draft.scores,
+            feedback: claude.draft.feedback,
+            general_comment: claude.draft.generalComment,
+            suggested_topic: claude.draft.suggestedTopic,
+            errors: claude.draft.errors,
+          },
+          null,
+          2,
+        ),
+        geminiDraftJson: geminiRaw,
+        claudeBias: p.claudeBias,
+        geminiBias: p.geminiBias,
+      })
+    : '';
+  const r2 = claude
+    ? ask(model, [firstTurn, { role: 'model', text: geminiRaw }, { role: 'user', text: rPrompt }])
+    : null;
+  if (!r2) {
+    // Gemini alone: nothing to reconcile.
+  } else if (!r2.ok) {
     warnings.push(`${r2.message} — chưa đối chiếu được, form dùng bản chấm của Claude.`);
   } else {
     usage = addUsage(usage, r2.usage);
@@ -388,6 +395,16 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
           ...fields,
         });
     }
+    if (!claude) {
+      ctx.db.insert('Drafts', {
+        id: ctx.svc.uuid(),
+        essay_id: essayId,
+        kind: 'ai',
+        raw_text: clip(geminiRaw),
+        parsed_json: JSON.stringify(geminiDraft),
+        created_at: ctx.nowIso,
+      });
+    }
     if (reconcileText) {
       ctx.db.insert('Drafts', {
         id: ctx.svc.uuid(),
@@ -422,7 +439,8 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
 
   return {
     essayId,
-    claudeDraft: claude.draft,
+    claudeDraft: claude ? claude.draft : null,
+    aiDraft: claude ? null : geminiDraft,
     reconciled,
     reconcileText,
     gemini: { scores: { ...geminiDraft.scores }, overall: geminiDraft.overall, model },
@@ -479,7 +497,7 @@ function queueEssays(ctx: Ctx, payload: unknown) {
   const latest = latestJobs(ctx);
   let queued = 0;
   let skipped = 0;
-  let noDraft = 0;
+  const noDraft = 0; // kept in the answer for older pages: Gemini now scores alone without a Claude draft
   for (const id of ids) {
     const e = ctx.db.byId('Essays', id);
     const st = latest.get(id)?.status;
@@ -492,10 +510,6 @@ function queueEssays(ctx: Ctx, payload: unknown) {
       st === 'running'
     ) {
       skipped++;
-      continue;
-    }
-    if (!ctx.db.findOne('Drafts', (d) => d.essay_id === id && d.kind === 'initial')) {
-      noDraft++;
       continue;
     }
     ctx.db.insert('AiJobs', {
@@ -513,6 +527,29 @@ function queueEssays(ctx: Ctx, payload: unknown) {
   }
   if (queued) ctx.svc.jobs.runSoon('aiJob');
   return { queued, skipped, noDraft };
+}
+
+/**
+ * A new essay from Google Classroom: queue a Gemini draft (when the key is set and the
+ * teacher has not turned it off), so the scoring form is filled in when the teacher opens it.
+ */
+export function queueAutoDraft(ctx: Ctx, essayId: string): boolean {
+  if (!jobsReady(ctx.svc)) return false;
+  const cfg = aiConfig(ctx);
+  if (!cfg.hasGeminiKey || !cfg.autoDraft) return false;
+  ctx.db.insert('AiJobs', {
+    id: ctx.svc.uuid(),
+    essay_id: essayId,
+    status: 'queued',
+    step: '',
+    error: '',
+    warnings: '',
+    usage_json: '',
+    created_at: ctx.nowIso,
+    updated_at: ctx.nowIso,
+  });
+  ctx.svc.jobs.runSoon('aiJob');
+  return true;
 }
 
 /** Time-driven: score queued essays one by one; schedules itself again if some are left. */
@@ -578,6 +615,7 @@ function settingsView(ctx: Ctx) {
     geminiModel: cfg.geminiModel,
     rubric: cfg.rubric,
     samplesPerPrompt: cfg.samplesPerPrompt,
+    autoDraft: cfg.autoDraft,
     sampleCount: activeSampleIds(ctx).size,
     jobsReady: jobsReady(ctx.svc),
     jobs: counts,
@@ -610,6 +648,7 @@ function saveSettings(ctx: Ctx, payload: unknown) {
   else if (clearGemini) ctx.svc.setSecret('GEMINI_API_KEY', '');
   if (r.has('geminiModel')) putSetting(ctx, 'ai_gemini_model', geminiModel);
   if (r.has('rubric')) putSetting(ctx, 'ai_rubric', rubric);
+  if (r.has('autoDraft')) putSetting(ctx, 'ai_auto_draft', r.bool('autoDraft') ? 'on' : 'off');
   if (samples !== null && samples !== undefined) putSetting(ctx, 'ai_samples', String(samples));
   return settingsView(ctx);
 }
