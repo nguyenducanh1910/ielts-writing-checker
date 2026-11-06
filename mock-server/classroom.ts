@@ -430,6 +430,19 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
         newClasses,
         aiDownSince: '',
         templates: CLASSES.filter((c) => c.hasPenaltyFile).map((c) => ({ id: c.id, name: c.name })),
+        todoItems: {
+          manual: state.subs
+            .filter((s) => /^Lỗi/.test(s.gradeStatus))
+            .map((s) => ({
+              id: s.id,
+              student: s.student,
+              title: s.title,
+              className: s.className,
+              skill: s.skill,
+              status: s.gradeStatus,
+            })),
+          formPending: [],
+        },
         todo: {
           review: counts(state.subs).review,
           approved: counts(state.subs).approved,
