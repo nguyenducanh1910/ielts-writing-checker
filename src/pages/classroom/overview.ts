@@ -159,6 +159,24 @@ function todoSection(ov: Overview): Child {
   );
 }
 
+/** Fetch what students just turned in on Classroom (the system also does it every 10 minutes). */
+function syncNowButton(reload: () => void): HTMLElement {
+  const status = h('span', { class: 'cl-muted', 'aria-live': 'polite' });
+  const btn = h('button', { type: 'button', class: 'btn' }, 'Cập nhật bài nộp ngay');
+  btn.addEventListener('click', () =>
+    busy(btn, 'Đang cập nhật…', async () => {
+      try {
+        const r = await classroom<{ message: string; busy?: boolean }>('sync.now');
+        if (r.busy) replace(status, ` ${r.message}`);
+        else reload();
+      } catch (err) {
+        replace(status, errorBox(err));
+      }
+    }),
+  );
+  return h('span', null, btn, status);
+}
+
 function overviewContent(ov: Overview, writingQueue: number | null, reload: () => void): Child[] {
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long',
@@ -174,6 +192,7 @@ function overviewContent(ov: Overview, writingQueue: number | null, reload: () =
       ov.teacherName ? `Chào ${ov.teacherName}` : 'Tổng quan',
       today.charAt(0).toUpperCase() + today.slice(1),
       link('/lop/giao-bai', 'Giao bài mới', { class: 'btn btn-primary' }),
+      syncNowButton(reload),
       externalLink(ov.sheetUrl, 'Mở Google Sheet ↗', 'btn'),
     ),
     ov.aiDownSince && Date.now() - Date.parse(ov.aiDownSince) > 3 * 3600e3
