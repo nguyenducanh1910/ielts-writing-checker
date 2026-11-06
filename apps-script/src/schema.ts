@@ -54,6 +54,8 @@ export const SCHEMA = {
     'practice_done_at',
     /** First time the student opened the scored essay on the website. */
     'result_viewed_at',
+    /** Teacher took the essay out of the marking queue (not scored); empty = in the queue. */
+    'withdrawn_at',
   ],
   Assignments: [
     'id',

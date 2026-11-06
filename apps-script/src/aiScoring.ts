@@ -249,6 +249,7 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
   if (essay.status === 'scored') {
     throw new ApiError('conflict', 'Bài này đã gửi điểm cho học viên: không chấm tự động lại.');
   }
+  if (essay.withdrawn_at) throw new ApiError('conflict', 'Bài này đã gỡ khỏi hàng chờ.');
   const claude = claudeDraftOf(ctx0, essayId);
   if (!claude) throw new ApiError('conflict', NEED_CLAUDE_DRAFT);
   const p = prepare(ctx0, essay);
@@ -486,6 +487,7 @@ function queueEssays(ctx: Ctx, payload: unknown) {
       !e ||
       e.status === 'draft' ||
       e.status === 'scored' ||
+      Boolean(e.withdrawn_at) ||
       st === 'queued' ||
       st === 'running'
     ) {
