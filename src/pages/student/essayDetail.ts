@@ -26,10 +26,10 @@ import { practiceView } from './practice';
 
 export function scoreTable(score: ScoreView, taskType: TaskType): HTMLElement {
   return table(
-    ['Criterion', 'Band'],
+    ['Tiêu chí', 'Band'],
     [
       ...CRITERIA.map((c) => [criterionLabel(c, taskType), formatBand(score.criteria[c])]),
-      [h('strong', null, 'Overall'), h('strong', null, formatBand(score.overall))],
+      [h('strong', null, 'Tổng'), h('strong', null, formatBand(score.overall))],
     ],
   );
 }
@@ -47,19 +47,19 @@ export function comparisonTable(
     h('span', { class: b > a ? 'up' : b < a ? 'down' : '' }, signed(b - a)),
   ];
   return table(
-    ['Criterion', 'Original', 'Rewrite', 'Change'],
+    ['Tiêu chí', 'Bài gốc', 'Viết lại', 'Thay đổi'],
     [
       ...CRITERIA.map((c) =>
         row(criterionLabel(c, taskType), original.criteria[c], rewrite.criteria[c]),
       ),
-      row('Overall', original.overall, rewrite.overall),
+      row('Tổng', original.overall, rewrite.overall),
     ],
-    'Improvement from original to rewrite',
+    'Tiến bộ từ bài gốc đến bài viết lại',
   );
 }
 
 function errorList(errors: ErrorView[], onPick: (id: string) => void): HTMLElement {
-  if (errors.length === 0) return h('p', null, 'No errors were tagged in this essay.');
+  if (errors.length === 0) return h('p', null, 'Bài này không có lỗi nào được đánh dấu.');
   return h(
     'ol',
     { class: 'error-list' },
@@ -104,15 +104,15 @@ export function essayDetailPage(ctx: RouteContext): Node {
         essay.assignmentTitle ? ` · ${essay.assignmentTitle}` : '',
         ' · ',
         statusBadge(essay.studentStatus),
-        essay.overTime ? [' ', badge('Over time', 'warning')] : null,
-        essay.autoSubmitted ? [' ', badge('Submitted automatically')] : null,
+        essay.overTime ? [' ', badge('Quá giờ', 'warning')] : null,
+        essay.autoSubmitted ? [' ', badge('Tự nộp khi hết giờ')] : null,
       );
       const facts = h(
         'p',
         { class: 'hint' },
-        `Submitted ${formatDateTime(essay.submittedAt)} · ${essay.wordCount} words`,
+        `Nộp lúc ${formatDateTime(essay.submittedAt)} · ${essay.wordCount} từ`,
         essay.timeUsedSeconds !== null
-          ? ` · ${essay.mode === 'practice' ? 'Time spent' : 'Time used'} ${Math.round(essay.timeUsedSeconds / 60)} min`
+          ? ` · ${essay.mode === 'practice' ? 'Thời gian viết' : 'Thời gian làm'} ${Math.round(essay.timeUsedSeconds / 60)} phút`
           : '',
       );
 
@@ -152,33 +152,26 @@ export function essayDetailPage(ctx: RouteContext): Node {
           sections.push(
             notice(
               'warning',
-              `A rewrite is required by ${formatDateTime(essay.rewrite.dueAt)}. You will see the details after the practice.`,
+              `Em cần viết lại trước ${formatDateTime(essay.rewrite.dueAt)}. Chi tiết hiện sau phần luyện lỗi.`,
             ),
           );
         }
         sections.push(
-          h('h2', null, 'Task'),
+          h('h2', null, 'Đề bài'),
           h('p', { class: 'prompt-text' }, essay.prompt),
-          h('h2', null, 'Your essay'),
+          h('h2', null, 'Bài viết của em'),
           textBox,
         );
-        return page(essay.parentEssayId ? 'Rewrite' : 'Essay', ...sections);
+        return page(essay.parentEssayId ? 'Viết lại' : 'Bài viết', ...sections);
       }
 
       if (essay.status === 'draft') {
         sections.push(
-          notice(
-            'info',
-            'This essay is still a draft. ',
-            link(`/write/${essay.id}`, 'Continue writing'),
-          ),
+          notice('info', 'Bài này vẫn là nháp. ', link(`/write/${essay.id}`, 'Viết tiếp')),
         );
       } else if (!essay.score) {
         sections.push(
-          notice(
-            'info',
-            'Submitted. Your teacher will score it soon — you will get an email when it is ready.',
-          ),
+          notice('info', 'Đã nộp. Thầy/cô sẽ sớm chấm — em sẽ nhận email khi có kết quả.'),
         );
       }
 
@@ -190,7 +183,7 @@ export function essayDetailPage(ctx: RouteContext): Node {
             h(
               'div',
               { class: 'band-hero' },
-              h('span', null, 'Overall band'),
+              h('span', null, 'Band tổng'),
               h('strong', null, formatBand(essay.score.overall)),
             ),
             scoreTable(essay.score, essay.taskType),
@@ -205,30 +198,30 @@ export function essayDetailPage(ctx: RouteContext): Node {
         sections.push(
           notice(
             rw.status === 'overdue' ? 'error' : 'warning',
-            h('h2', null, 'Rewrite required'),
+            h('h2', null, 'Cần viết lại'),
             rw.note ? h('p', null, rw.note) : null,
             h(
               'p',
               null,
-              `Due ${formatDateTime(rw.dueAt)} — `,
+              `Hạn ${formatDateTime(rw.dueAt)} — `,
               open
                 ? countdown(rw.dueAt)
                 : rw.status === 'submitted'
-                  ? `submitted${rw.late ? ' (late)' : ''}`
+                  ? `đã nộp${rw.late ? ' (muộn)' : ''}`
                   : rw.status,
             ),
             open
-              ? link(`/rewrite/${essay.id}`, 'Submit rewrite', { class: 'btn btn-primary' })
+              ? link(`/rewrite/${essay.id}`, 'Nộp bài viết lại', { class: 'btn btn-primary' })
               : null,
             rw.rewriteEssayId
-              ? h('p', null, link(`/essays/${rw.rewriteEssayId}`, 'View your rewrite'))
+              ? h('p', null, link(`/essays/${rw.rewriteEssayId}`, 'Xem bài viết lại'))
               : null,
           ),
         );
       }
       if (essay.score && essay.rewriteEssay?.score) {
         sections.push(
-          h('h2', null, 'Original vs rewrite'),
+          h('h2', null, 'Bài gốc và bài viết lại'),
           comparisonTable(essay.score, essay.rewriteEssay.score, essay.taskType),
         );
       }
@@ -237,8 +230,8 @@ export function essayDetailPage(ctx: RouteContext): Node {
           h(
             'p',
             null,
-            'This is a rewrite of ',
-            link(`/essays/${essay.parent.id}`, 'your original essay'),
+            'Đây là bài viết lại của ',
+            link(`/essays/${essay.parent.id}`, 'bài gốc'),
             '.',
           ),
           essay.score && essay.parent.score
@@ -249,7 +242,7 @@ export function essayDetailPage(ctx: RouteContext): Node {
 
       if (essay.score) {
         sections.push(
-          h('h2', null, 'Feedback'),
+          h('h2', null, 'Nhận xét'),
           essay.score.generalComment
             ? h('div', { class: 'card' }, markdown(essay.score.generalComment))
             : null,
@@ -265,10 +258,10 @@ export function essayDetailPage(ctx: RouteContext): Node {
       }
 
       sections.push(
-        h('h2', null, 'Task'),
+        h('h2', null, 'Đề bài'),
         h('p', { class: 'prompt-text' }, essay.prompt),
         essay.hasImage
-          ? remoteImage('essays.image', { essayId: essay.id }, 'Chart or diagram for this task')
+          ? remoteImage('essays.image', { essayId: essay.id }, 'Biểu đồ của đề này')
           : null,
       );
 
@@ -280,19 +273,15 @@ export function essayDetailPage(ctx: RouteContext): Node {
             h(
               'div',
               null,
-              h('h2', null, 'Your essay'),
-              h(
-                'p',
-                { class: 'hint' },
-                'Highlighted text has a tagged error. Select it to see the correction.',
-              ),
+              h('h2', null, 'Bài viết của em'),
+              h('p', { class: 'hint' }, 'Phần tô màu là lỗi đã đánh dấu. Bấm vào để xem cách sửa.'),
               highlightLegend(),
               textBox,
             ),
             h(
               'div',
               null,
-              h('h2', null, `Errors (${errors.length})`),
+              h('h2', null, `Lỗi (${errors.length})`),
               errorList(errors, (id) => {
                 active = id;
                 renderText();
@@ -301,10 +290,10 @@ export function essayDetailPage(ctx: RouteContext): Node {
           ),
         );
       } else {
-        sections.push(h('h2', null, 'Your essay'), textBox);
+        sections.push(h('h2', null, 'Bài viết của em'), textBox);
       }
-      return page(essay.parentEssayId ? 'Rewrite' : 'Essay', ...sections);
+      return page(essay.parentEssayId ? 'Viết lại' : 'Bài viết', ...sections);
     },
-    'Loading essay…',
+    'Đang tải bài…',
   );
 }

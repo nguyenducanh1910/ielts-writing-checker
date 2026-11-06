@@ -35,54 +35,54 @@ export function newEssayPage(ctx: RouteContext): Node {
   const mode = ctx.query.get('mode');
   if (mode === 'practice') {
     return page(
-      'Practice essay',
+      'Bài luyện tập',
       async(getConfig, (config) => practiceEditor(config, null, null)),
     );
   }
   if (mode === 'test') {
     return page(
-      'Start a timed test',
+      'Làm bài có giờ',
       async(getConfig, (config) => testSetup(config)),
     );
   }
   return page(
-    'Start a new essay',
-    h('p', null, 'Choose how you want to write. Both modes are scored the same way.'),
+    'Viết bài mới',
+    h('p', null, 'Chọn cách em muốn viết. Hai cách được chấm như nhau.'),
     h(
       'div',
       { class: 'grid-2' },
       h(
         'div',
         { class: 'card' },
-        h('h2', null, 'Practice mode'),
+        h('h2', null, 'Luyện tập'),
         h(
           'ul',
           null,
-          h('li', null, 'No time limit'),
-          h('li', null, 'Type here or paste text written elsewhere'),
-          h('li', null, 'Save drafts and come back later'),
+          h('li', null, 'Không giới hạn thời gian'),
+          h('li', null, 'Gõ tại đây hoặc dán bài đã viết ở nơi khác'),
+          h('li', null, 'Lưu nháp và viết tiếp sau'),
         ),
-        link('/new?mode=practice', 'Start practice', { class: 'btn btn-primary' }),
+        link('/new?mode=practice', 'Bắt đầu luyện tập', { class: 'btn btn-primary' }),
       ),
       h(
         'div',
         { class: 'card' },
-        h('h2', null, 'Test mode'),
+        h('h2', null, 'Làm bài kiểm tra'),
         h(
           'ul',
           null,
-          h('li', null, '20 minutes for Task 1, 40 minutes for Task 2'),
-          h('li', null, 'Typed here only — pasting is blocked'),
-          h('li', null, 'One sitting; submitted automatically when time runs out'),
+          h('li', null, '20 phút cho Task 1, 40 phút cho Task 2'),
+          h('li', null, 'Chỉ gõ tại đây — không dán được chữ'),
+          h('li', null, 'Làm một lần; hết giờ bài tự nộp'),
         ),
-        link('/new?mode=test', 'Set up a test', { class: 'btn btn-primary' }),
+        link('/new?mode=test', 'Chuẩn bị bài kiểm tra', { class: 'btn btn-primary' }),
       ),
     ),
     h(
       'p',
       null,
-      'Your teacher may also set tests for you: see ',
-      link('/assigned', 'Assigned to me'),
+      'Thầy/cô cũng có thể giao bài kiểm tra cho em: xem ',
+      link('/assigned', 'Bài thầy giao'),
       '.',
     ),
   );
@@ -107,17 +107,17 @@ export function writePage(ctx: RouteContext): Node {
         return null;
       }
       if (essay.mode === 'practice') {
-        return page(parent ? 'Rewrite' : 'Practice essay', practiceEditor(config, essay, parent));
+        return page(parent ? 'Viết lại' : 'Bài luyện tập', practiceEditor(config, essay, parent));
       }
       return timedEditor(essay);
     },
-    'Loading your essay…',
+    'Đang tải bài…',
   );
 }
 
 export function rewritePage(ctx: RouteContext): Node {
   return page(
-    'Submit a rewrite',
+    'Nộp bài viết lại',
     async(
       async () => {
         const [config, parent, mine] = await Promise.all([
@@ -134,7 +134,7 @@ export function rewritePage(ctx: RouteContext): Node {
           return null;
         }
         if (!parent.rewrite || !['requested', 'overdue'].includes(parent.rewrite.status)) {
-          return notice('info', 'There is no open rewrite request for this essay.');
+          return notice('info', 'Bài này không có yêu cầu viết lại nào đang mở.');
         }
         return practiceEditor(config, null, parent);
       },
@@ -147,14 +147,14 @@ function wordCountBox(taskType: () => TaskType, body: HTMLTextAreaElement): HTML
   const update = () => {
     const n = countWords(body.value);
     const min = MIN_WORDS[taskType()];
-    out.textContent = `${n} word${n === 1 ? '' : 's'}`;
+    out.textContent = `${n} từ`;
     if (n > 0 && n < min) {
       out.append(
         ' · ',
         h(
           'span',
           { class: 'warn' },
-          `${TASK_TYPE_LABELS[taskType()]} answers should be at least ${min} words. You can still submit.`,
+          `Bài ${TASK_TYPE_LABELS[taskType()]} nên có ít nhất ${min} từ. Em vẫn nộp được.`,
         ),
       );
     }
@@ -183,19 +183,23 @@ function practiceClock(
   let lastInput = 0;
   const time = h('strong', { class: 'practice-clock-time' });
   const state = h('span', { class: 'hint' });
-  const pauseBtn = h('button', { type: 'button', class: 'btn btn-small', hidden: true }, 'Pause');
+  const pauseBtn = h(
+    'button',
+    { type: 'button', class: 'btn btn-small', hidden: true },
+    'Tạm dừng',
+  );
   const idle = () => Date.now() - lastInput > PRACTICE_IDLE_MS;
   const render = () => {
     time.textContent = clock(seconds * 1000);
     pauseBtn.hidden = !started;
-    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    pauseBtn.textContent = paused ? 'Tiếp tục' : 'Tạm dừng';
     state.textContent = !started
-      ? `Starts when you begin writing. IELTS allows about ${TIME_LIMITS[taskType()]} minutes for ${TASK_TYPE_LABELS[taskType()]}.`
+      ? `Bắt đầu tính khi em viết. IELTS cho khoảng ${TIME_LIMITS[taskType()]} phút cho ${TASK_TYPE_LABELS[taskType()]}.`
       : paused
-        ? 'Paused.'
+        ? 'Đã tạm dừng.'
         : idle()
-          ? 'Paused while you are not typing.'
-          : `IELTS allows about ${TIME_LIMITS[taskType()]} minutes.`;
+          ? 'Tạm dừng khi em không gõ.'
+          : `IELTS cho khoảng ${TIME_LIMITS[taskType()]} phút.`;
   };
   body.addEventListener('input', () => {
     lastInput = Date.now();
@@ -219,8 +223,8 @@ function practiceClock(
   render();
   const el = h(
     'div',
-    { class: 'practice-clock', role: 'group', 'aria-label': 'Time spent writing' },
-    h('span', null, 'Time spent '),
+    { class: 'practice-clock', role: 'group', 'aria-label': 'Thời gian viết' },
+    h('span', null, 'Thời gian viết '),
     time,
     pauseBtn,
     state,
@@ -286,7 +290,7 @@ function practiceEditor(
         imagePreview,
         h('img', {
           src: `data:${pendingImage.mimeType};base64,${pendingImage.base64}`,
-          alt: 'Chart image you selected',
+          alt: 'Ảnh biểu đồ em đã chọn',
         }),
       );
     } else if (hasImage && (essay || parent)) {
@@ -295,7 +299,7 @@ function practiceEditor(
         remoteImage(
           'essays.image',
           { essayId: isRewrite ? parent!.id : essay!.id },
-          'Chart or diagram for this task',
+          'Biểu đồ của đề này',
         ),
       );
     } else {
@@ -320,10 +324,10 @@ function practiceEditor(
   });
 
   const imageField = field({
-    label: 'Chart or diagram image (PNG or JPG, max 5 MB)',
+    label: 'Ảnh biểu đồ (PNG hoặc JPG, tối đa 5 MB)',
     control: fileInput,
     name: 'image',
-    hint: 'Required for Task 1 Academic. Attach the chart from the question.',
+    hint: 'Bắt buộc với Task 1 Academic. Đính kèm biểu đồ trong đề.',
   });
   imageField.append(imagePreview);
   // Task 2: pick a question from the prompt bank (not for rewrites: the question is fixed).
@@ -331,7 +335,7 @@ function practiceEditor(
     prompt.value = picked.prompt;
     category.setValues(categoryForBankPrompt(picked, config));
     dirty = true;
-    toast('Question added. Check the topic and essay type.');
+    toast('Đã điền đề. Kiểm tra lại chủ đề và dạng bài.');
     prompt.focus();
   });
   const syncTaskType = () => {
@@ -351,16 +355,13 @@ function practiceEditor(
             type: 'button',
             class: 'btn',
             onclick: () => {
-              if (
-                !body.value.trim() ||
-                window.confirm('Replace your text with the original essay?')
-              ) {
+              if (!body.value.trim() || window.confirm('Thay bài đang viết bằng bài gốc?')) {
                 body.value = parent!.body;
                 body.dispatchEvent(new Event('input'));
               }
             },
           },
-          'Start from my original text',
+          'Bắt đầu từ bài gốc',
         )
       : null;
 
@@ -386,20 +387,20 @@ function practiceEditor(
     history.replaceState(null, '', `#/write/${saved.id}`);
   };
 
-  const saveBtn = h('button', { type: 'button', class: 'btn' }, 'Save draft');
-  const submitBtn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Submit');
+  const saveBtn = h('button', { type: 'button', class: 'btn' }, 'Lưu nháp');
+  const submitBtn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Nộp bài');
   const deleteBtn = h(
     'button',
     { type: 'button', class: 'btn btn-danger-outline', hidden: !currentId || isRewrite },
-    'Delete draft',
+    'Xoá nháp',
   );
 
   saveBtn.addEventListener('click', () =>
-    busy(saveBtn, 'Saving…', async () => {
+    busy(saveBtn, 'Đang lưu…', async () => {
       try {
         const saved = await api<EssayDetail>('essays.saveDraft', payload());
         afterSave(saved);
-        replace(status, notice('success', `Draft saved at ${formatDateTime(saved.savedAt)}.`));
+        replace(status, notice('success', `Đã lưu nháp lúc ${formatDateTime(saved.savedAt)}.`));
         showFieldErrors(form, {});
       } catch (err) {
         if (err instanceof ApiClientError) showFieldErrors(form, err.fields);
@@ -411,16 +412,16 @@ function practiceEditor(
   deleteBtn.addEventListener('click', async () => {
     if (!currentId) return;
     const ok = await confirmDialog({
-      title: 'Delete this draft?',
-      message: 'The draft and its image will be deleted. This cannot be undone.',
-      confirmLabel: 'Delete draft',
+      title: 'Xoá bản nháp này?',
+      message: 'Bản nháp và ảnh kèm theo sẽ bị xoá, không khôi phục được.',
+      confirmLabel: 'Xoá nháp',
       danger: true,
     });
     if (!ok) return;
     try {
       await api('essays.deleteDraft', { id: currentId });
       dirty = false;
-      toast('Draft deleted.');
+      toast('Đã xoá nháp.');
       navigate('/essays');
     } catch (err) {
       replace(status, errorBox(err));
@@ -436,38 +437,38 @@ function practiceEditor(
           h(
             'p',
             null,
-            h('strong', null, 'Rewrite request: '),
-            parent.rewrite.note || 'Rewrite this essay.',
+            h('strong', null, 'Yêu cầu viết lại: '),
+            parent.rewrite.note || 'Viết lại bài này.',
           ),
           h(
             'p',
             null,
-            `Due ${formatDateTime(parent.rewrite.dueAt)}. Late rewrites are still accepted and marked late.`,
+            `Hạn ${formatDateTime(parent.rewrite.dueAt)}. Nộp muộn vẫn được nhận và ghi là muộn.`,
           ),
         )
       : null,
     h(
       'div',
       { class: 'grid-3' },
-      field({ label: 'Task type', control: taskSel, name: 'taskType' }),
+      field({ label: 'Dạng đề', control: taskSel, name: 'taskType' }),
       ...category.fields,
     ),
     bank,
     field({
-      label: 'Task prompt',
+      label: 'Đề bài',
       control: prompt,
       name: 'prompt',
-      hint: 'Copy the question exactly as it was given.',
+      hint: 'Chép đúng nguyên văn đề bài.',
     }),
     imageField,
     field({
-      label: 'Test date (optional)',
+      label: 'Ngày thi (không bắt buộc)',
       control: testDate,
       name: 'testDate',
-      hint: 'If you wrote this in a real or mock test.',
+      hint: 'Nếu em viết bài này trong kỳ thi thật hoặc thi thử.',
     }),
     timer.el,
-    field({ label: 'Your essay', control: body, name: 'body' }),
+    field({ label: 'Bài viết của em', control: body, name: 'body' }),
     startFromOriginal,
     wordCountBox(() => taskSel.value as TaskType, body),
     h('div', { class: 'actions' }, saveBtn, submitBtn, deleteBtn),
@@ -483,28 +484,27 @@ function practiceEditor(
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const errors: Record<string, string> = isRewrite ? {} : category.errors();
-    if (!prompt.value.trim()) errors.prompt = 'Enter the task prompt';
-    if (!body.value.trim()) errors.body = 'Write your essay';
+    if (!prompt.value.trim()) errors.prompt = 'Nhập đề bài';
+    if (!body.value.trim()) errors.body = 'Viết bài của em';
     if (taskSel.value === 'task1_academic' && !pendingImage && !hasImage) {
-      errors.image =
-        'Attach the chart or diagram image. Task 1 Academic cannot be submitted without it.';
+      errors.image = 'Đính kèm ảnh biểu đồ. Task 1 Academic không nộp được nếu thiếu ảnh.';
     }
     showFieldErrors(form, errors);
     if (Object.keys(errors).length) return;
     const ok = await confirmDialog({
-      title: 'Submit this essay?',
-      message: "You can't edit after submitting.",
-      confirmLabel: 'Submit',
+      title: 'Nộp bài này?',
+      message: 'Sau khi nộp em sẽ không sửa được nữa.',
+      confirmLabel: 'Nộp bài',
     });
     if (!ok) return;
-    await busy(submitBtn, 'Submitting and saving to Drive…', async () => {
+    await busy(submitBtn, 'Đang nộp và lưu vào Drive…', async () => {
       try {
         // Save first so a new essay has an ID (and the image is uploaded).
         const saved = await api<EssayDetail>('essays.saveDraft', payload());
         afterSave(saved);
         await api('essays.submit', { ...payload(), id: saved.id, image: undefined });
         dirty = false;
-        toast('Essay submitted. Your teacher will score it soon.');
+        toast('Đã nộp bài. Thầy/cô sẽ sớm chấm.');
         navigate(`/essays/${saved.id}`);
       } catch (err) {
         if (err instanceof ApiClientError) showFieldErrors(form, err.fields);
@@ -527,9 +527,9 @@ function testSetup(config: AppConfig): HTMLElement {
   const prompt = h('textarea', { name: 'prompt', rows: '4', maxlength: '4000' });
   const fileInput = h('input', { type: 'file', name: 'image', accept: 'image/png,image/jpeg' });
   const status = h('div', { 'aria-live': 'polite' });
-  const startBtn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Start test');
+  const startBtn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Bắt đầu làm bài');
   const imageField = field({
-    label: 'Chart or diagram image (PNG or JPG, max 5 MB)',
+    label: 'Ảnh biểu đồ (PNG hoặc JPG, tối đa 5 MB)',
     control: fileInput,
     name: 'image',
   });
@@ -537,14 +537,14 @@ function testSetup(config: AppConfig): HTMLElement {
   const bank = promptBankPicker((picked) => {
     prompt.value = picked.prompt;
     category.setValues(categoryForBankPrompt(picked, config));
-    toast('Question added. Check the topic and essay type.');
+    toast('Đã điền đề. Kiểm tra lại chủ đề và dạng bài.');
     prompt.focus();
   });
   const sync = () => {
     bank.hidden = taskSel.value !== 'task2';
     imageField.hidden = taskSel.value !== 'task1_academic';
     category.setTaskType(taskSel.value);
-    limitNote.textContent = `Time limit: ${TIME_LIMITS[taskSel.value as TaskType]} minutes. The timer starts when you press "Start test" and keeps running if you leave the page.`;
+    limitNote.textContent = `Thời gian: ${TIME_LIMITS[taskSel.value as TaskType]} phút. Đồng hồ chạy khi em bấm "Bắt đầu làm bài" và vẫn chạy nếu em rời trang.`;
   };
   taskSel.addEventListener('change', sync);
   fileInput.addEventListener('change', async () => {
@@ -565,15 +565,15 @@ function testSetup(config: AppConfig): HTMLElement {
     h(
       'div',
       { class: 'grid-3' },
-      field({ label: 'Task type', control: taskSel, name: 'taskType' }),
+      field({ label: 'Dạng đề', control: taskSel, name: 'taskType' }),
       ...category.fields,
     ),
     bank,
     field({
-      label: 'Task prompt',
+      label: 'Đề bài',
       control: prompt,
       name: 'prompt',
-      hint: 'Enter the question before you start. You cannot change it later.',
+      hint: 'Nhập đề trước khi bắt đầu. Sau đó không sửa được.',
     }),
     imageField,
     limitNote,
@@ -584,18 +584,17 @@ function testSetup(config: AppConfig): HTMLElement {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const errors: Record<string, string> = category.errors();
-    if (prompt.value.trim().length < 10) errors.prompt = 'Enter the full task prompt';
-    if (taskSel.value === 'task1_academic' && !image)
-      errors.image = 'Attach the chart or diagram image first';
+    if (prompt.value.trim().length < 10) errors.prompt = 'Nhập đầy đủ đề bài';
+    if (taskSel.value === 'task1_academic' && !image) errors.image = 'Đính kèm ảnh biểu đồ trước';
     showFieldErrors(form, errors);
     if (Object.keys(errors).length) return;
     const ok = await confirmDialog({
-      title: 'Start the timer?',
-      message: `You will have ${TIME_LIMITS[taskSel.value as TaskType]} minutes. Pasting is blocked, and the essay is submitted automatically when time runs out.`,
-      confirmLabel: 'Start test',
+      title: 'Bắt đầu tính giờ?',
+      message: `Em có ${TIME_LIMITS[taskSel.value as TaskType]} phút. Không dán được chữ, hết giờ bài tự nộp.`,
+      confirmLabel: 'Bắt đầu làm bài',
     });
     if (!ok) return;
-    await busy(startBtn, 'Starting…', async () => {
+    await busy(startBtn, 'Đang bắt đầu…', async () => {
       try {
         const essay = await api<EssayDetail>('essays.startTest', {
           taskType: taskSel.value,
@@ -664,7 +663,7 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
     class: 'essay-input',
     spellcheck: 'false',
     autocomplete: 'off',
-    'aria-label': 'Your essay',
+    'aria-label': 'Bài viết của em',
   });
   const local = readLocal(essay.id);
   body.value = essay.body;
@@ -682,7 +681,7 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
   const blockPaste = (e: Event) => {
     e.preventDefault();
     pasteAttempts++;
-    pasteNote.textContent = 'Pasting is not allowed in Test mode. Please type your answer.';
+    pasteNote.textContent = 'Bài kiểm tra không cho dán chữ. Em hãy gõ bài.';
     writeLocal(essay.id, { body: body.value, pasteAttempts, at: new Date().toISOString() });
   };
   body.addEventListener('paste', blockPaste);
@@ -703,10 +702,11 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
         pasteAttempts,
       });
       lastServerBody = saved.body;
-      saveStatus.textContent = `Saved to the server at ${new Date().toLocaleTimeString()}.`;
+      saveStatus.textContent = `Đã lưu lên máy chủ lúc ${new Date().toLocaleTimeString()}.`;
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'forbidden') return;
-      saveStatus.textContent = 'Could not reach the server. Your text is saved in this browser.';
+      saveStatus.textContent =
+        'Không kết nối được máy chủ. Bài của em vẫn được lưu trong trình duyệt này.';
     }
   };
 
@@ -714,13 +714,7 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
     if (submitted || submitting) return;
     submitting = true;
     saveLocal();
-    replace(
-      status,
-      notice(
-        'info',
-        auto ? 'Time is up. Submitting your essay…' : 'Submitting and saving to Drive…',
-      ),
-    );
+    replace(status, notice('info', auto ? 'Hết giờ. Đang nộp bài…' : 'Đang nộp và lưu vào Drive…'));
     try {
       await api('essays.submit', {
         id: essay.id,
@@ -730,7 +724,7 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
       });
       submitted = true;
       clearLocal(essay.id);
-      toast(auto ? 'Time is up — your essay was submitted.' : 'Essay submitted.');
+      toast(auto ? 'Hết giờ — bài của em đã được nộp.' : 'Đã nộp bài.');
       navigate(`/essays/${essay.id}`);
     } catch (err) {
       submitting = false;
@@ -747,7 +741,7 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
         auto
           ? notice(
               'warning',
-              'We will keep trying every 15 seconds. Your text is safe in this browser.',
+              'Hệ thống thử lại mỗi 15 giây. Bài của em vẫn an toàn trong trình duyệt này.',
             )
           : null,
       );
@@ -757,16 +751,16 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
   const announced = new Set<number>();
   const tick = () => {
     const left = deadline - serverNow();
-    timer.textContent = `Time left ${clock(left)}`;
+    timer.textContent = `Còn ${clock(left)}`;
     timer.classList.toggle('low', left < 5 * 60000);
     for (const m of [10, 5, 1]) {
       if (left <= m * 60000 && left > (m - 1) * 60000 && !announced.has(m)) {
         announced.add(m);
-        announce.textContent = `${m} minute${m === 1 ? '' : 's'} left.`;
+        announce.textContent = `Còn ${m} phút.`;
       }
     }
     if (left <= 0) {
-      timer.textContent = 'Time is up';
+      timer.textContent = 'Hết giờ';
       if (!submitting && !submitted) void doSubmit(true);
     }
   };
@@ -793,19 +787,19 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
   });
   setUnsavedCheck(() => !submitted && body.value !== lastServerBody);
 
-  const submitBtn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Submit');
+  const submitBtn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Nộp bài');
   submitBtn.addEventListener('click', async () => {
     const ok = await confirmDialog({
-      title: 'Submit this essay?',
-      message: "You can't edit after submitting.",
-      confirmLabel: 'Submit',
+      title: 'Nộp bài này?',
+      message: 'Sau khi nộp em sẽ không sửa được nữa.',
+      confirmLabel: 'Nộp bài',
     });
-    if (ok) await busy(submitBtn, 'Submitting…', () => doSubmit(false));
+    if (ok) await busy(submitBtn, 'Đang nộp…', () => doSubmit(false));
   });
 
   tick();
   return page(
-    essay.assignmentTitle ?? `${taskLabel(essay.taskType)} test`,
+    essay.assignmentTitle ?? `Bài kiểm tra ${taskLabel(essay.taskType)}`,
     h(
       'div',
       { class: 'test-bar' },
@@ -813,23 +807,23 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
       h(
         'span',
         null,
-        `${modeLabel(essay.mode)} · ${taskLabel(essay.taskType)} · ${essay.timeLimitMinutes} minutes`,
+        `${modeLabel(essay.mode)} · ${taskLabel(essay.taskType)} · ${essay.timeLimitMinutes} phút`,
       ),
     ),
     announce,
     h(
       'div',
       { class: 'card prompt-box' },
-      h('h2', null, 'Task'),
+      h('h2', null, 'Đề bài'),
       h('p', { class: 'prompt-text' }, essay.prompt),
       essay.hasImage
-        ? remoteImage('essays.image', { essayId: essay.id }, 'Chart or diagram for this task')
+        ? remoteImage('essays.image', { essayId: essay.id }, 'Biểu đồ của đề này')
         : null,
     ),
     h(
       'div',
       { class: 'card editor' },
-      h('label', { for: 'timed-body', class: 'sr-only' }, 'Your essay'),
+      h('label', { for: 'timed-body', class: 'sr-only' }, 'Bài viết của em'),
       Object.assign(body, { id: 'timed-body' }),
       wordCountBox(() => essay.taskType, body),
       pasteNote,
@@ -840,7 +834,7 @@ export function timedEditor(essay: EssayDetail): HTMLElement {
     h(
       'p',
       { class: 'hint' },
-      'Your work is saved in this browser every 15 seconds and on the server every 2 minutes. The timer keeps running if you leave this page.',
+      'Bài được lưu trong trình duyệt mỗi 15 giây và lên máy chủ mỗi 2 phút. Đồng hồ vẫn chạy nếu em rời trang.',
     ),
   );
 }

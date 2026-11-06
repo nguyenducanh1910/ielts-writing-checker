@@ -8,13 +8,13 @@ import { settingsPage } from './settings';
 import { topicsPage } from './topics';
 
 export const routes: Route[] = [
-  { pattern: '/dashboard', guard: 'student', title: 'Dashboard', render: dashboardPage },
-  { pattern: '/essays', guard: 'student', title: 'My essays', render: essaysPage },
-  { pattern: '/essays/:id', guard: 'student', title: 'Essay', render: essayDetailPage },
-  { pattern: '/new', guard: 'student', title: 'Write', render: newEssayPage },
-  { pattern: '/write/:id', guard: 'student', title: 'Writing', render: writePage },
-  { pattern: '/rewrite/:parentId', guard: 'student', title: 'Rewrite', render: rewritePage },
-  { pattern: '/assigned', guard: 'student', title: 'Assigned to me', render: assignedPage },
-  { pattern: '/topics', guard: 'student', title: "Topics I've written", render: topicsPage },
-  { pattern: '/settings', guard: 'user', title: 'Settings', render: settingsPage },
+  { pattern: '/dashboard', guard: 'student', title: 'Thống kê', render: dashboardPage },
+  { pattern: '/essays', guard: 'student', title: 'Bài Writing của em', render: essaysPage },
+  { pattern: '/essays/:id', guard: 'student', title: 'Bài viết', render: essayDetailPage },
+  { pattern: '/new', guard: 'student', title: 'Viết bài', render: newEssayPage },
+  { pattern: '/write/:id', guard: 'student', title: 'Đang viết', render: writePage },
+  { pattern: '/rewrite/:parentId', guard: 'student', title: 'Viết lại', render: rewritePage },
+  { pattern: '/assigned', guard: 'student', title: 'Bài thầy giao', render: assignedPage },
+  { pattern: '/topics', guard: 'student', title: 'Chủ đề em đã viết', render: topicsPage },
+  { pattern: '/settings', guard: 'user', title: 'Cài đặt', render: settingsPage },
 ];

@@ -1,4 +1,4 @@
-// "My essays" list.
+// "Bài Writing của em" list.
 import { api } from '../../api';
 import { h } from '../../dom';
 import type { EssaySummary } from '../../types';
@@ -25,35 +25,35 @@ export function statusBadge(status: string): HTMLElement {
 
 export function essaysPage(): Node {
   return page(
-    'My essays',
-    h('p', null, link('/new', 'Start a new essay', { class: 'btn btn-primary' })),
+    'Bài Writing của em',
+    h('p', null, link('/new', 'Viết bài mới', { class: 'btn btn-primary' })),
     async(
       () => api<EssaySummary[]>('essays.listMine'),
       (essays) => {
         if (essays.length === 0) {
           return empty(
-            'You have not written any essays yet.',
-            link('/new', 'Write your first essay', { class: 'btn' }),
+            'Em chưa viết bài nào.',
+            link('/new', 'Viết bài đầu tiên', { class: 'btn' }),
           );
         }
         return table(
-          ['Essay', 'Task', 'Mode', 'Status', 'Band', 'Date'],
+          ['Bài viết', 'Đề bài', 'Hình thức', 'Trạng thái', 'Band', 'Ngày'],
           essays.map((e) => [
             link(e.status === 'draft' ? `/write/${e.id}` : `/essays/${e.id}`, [
               e.topic,
-              e.parentEssayId ? ' (rewrite)' : '',
+              e.parentEssayId ? ' (viết lại)' : '',
               e.assignmentTitle ? ` – ${e.assignmentTitle}` : '',
             ]),
             taskLabel(e.taskType),
-            [modeLabel(e.mode), e.overTime ? [' ', badge('Over time', 'warning')] : null],
+            [modeLabel(e.mode), e.overTime ? [' ', badge('Quá giờ', 'warning')] : null],
             statusBadge(e.studentStatus),
             formatBand(e.overall),
             formatDateTime(e.submittedAt ?? e.savedAt),
           ]),
-          'Your essays, newest first',
+          'Các bài của em, mới nhất trước',
         );
       },
-      'Loading your essays…',
+      'Đang tải bài…',
     ),
   );
 }

@@ -1,4 +1,4 @@
-// "Assigned to me": tests set by the teacher. The prompt is hidden until Start test.
+// "Bài thầy giao": tests set by the teacher. The prompt is hidden until Start test.
 import { api } from '../../api';
 import { h, replace } from '../../dom';
 import { navigate } from '../../router';
@@ -30,19 +30,19 @@ export interface MyAssignment {
 
 export function assignedPage(): Node {
   return page(
-    'Assigned to me',
+    'Bài thầy giao',
     h(
       'p',
       null,
-      'Tests your teacher has set. The question appears when you press “Start test”, and the timer starts straight away. You get one attempt.',
+      'Bài kiểm tra thầy/cô giao. Đề hiện ra khi em bấm “Bắt đầu làm bài” và đồng hồ chạy ngay. Em chỉ được làm một lần.',
     ),
     async(
       () => api<MyAssignment[]>('assignments.mine'),
       (list) => {
-        if (list.length === 0) return empty('No tests have been assigned to you yet.');
+        if (list.length === 0) return empty('Thầy/cô chưa giao bài kiểm tra nào.');
         return h('div', { class: 'cards' }, ...list.map(assignmentCard));
       },
-      'Loading assigned tests…',
+      'Đang tải bài được giao…',
     ),
   );
 }
@@ -51,15 +51,15 @@ function assignmentCard(a: MyAssignment): HTMLElement {
   const status = h('div', { 'aria-live': 'polite' });
   let action: HTMLElement | null = null;
   if (a.status === 'not_started' && a.isOpen) {
-    const btn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Start test');
+    const btn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Bắt đầu làm bài');
     btn.addEventListener('click', async () => {
       const ok = await confirmDialog({
-        title: `Start “${a.title}”?`,
-        message: `The question appears now and you will have ${a.timeLimitMinutes} minutes. The timer keeps running if you leave. Pasting is blocked.`,
-        confirmLabel: 'Start test',
+        title: `Bắt đầu “${a.title}”?`,
+        message: `Đề sẽ hiện ra ngay và em có ${a.timeLimitMinutes} phút. Đồng hồ vẫn chạy nếu em rời trang. Không dán được chữ.`,
+        confirmLabel: 'Bắt đầu làm bài',
       });
       if (!ok) return;
-      await busy(btn, 'Starting…', async () => {
+      await busy(btn, 'Đang bắt đầu…', async () => {
         try {
           const essay = await api<EssayDetail>('assignments.start', { id: a.id });
           navigate(`/write/${essay.id}`);
@@ -70,16 +70,16 @@ function assignmentCard(a: MyAssignment): HTMLElement {
     });
     action = btn;
   } else if (a.status === 'in_progress' && a.essayId) {
-    action = link(`/write/${a.essayId}`, 'Continue test', { class: 'btn btn-primary' });
+    action = link(`/write/${a.essayId}`, 'Làm tiếp', { class: 'btn btn-primary' });
   } else if ((a.status === 'submitted' || a.status === 'over_time') && a.essayId) {
-    action = link(`/essays/${a.essayId}`, 'View essay', { class: 'btn' });
+    action = link(`/essays/${a.essayId}`, 'Xem bài', { class: 'btn' });
   }
   const opensLater = Date.parse(a.opensAt) > Date.now();
   return h(
     'article',
     { class: 'card' },
     h('h2', null, a.title),
-    h('p', null, `${taskLabel(a.taskType)} · ${a.timeLimitMinutes} minutes`),
+    h('p', null, `${taskLabel(a.taskType)} · ${a.timeLimitMinutes} phút`),
     h(
       'p',
       null,
@@ -89,8 +89,8 @@ function assignmentCard(a: MyAssignment): HTMLElement {
       ),
       ' ',
       opensLater
-        ? `Opens ${formatDateTime(a.opensAt)}`
-        : `Closes ${formatDateTime(a.closesAt)}${a.isOpen ? ` (${countdown(a.closesAt)})` : ''}`,
+        ? `Mở lúc ${formatDateTime(a.opensAt)}`
+        : `Hạn ${formatDateTime(a.closesAt)}${a.isOpen ? ` (${countdown(a.closesAt)})` : ''}`,
     ),
     action,
     status,

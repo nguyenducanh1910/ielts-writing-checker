@@ -37,43 +37,43 @@ export function topicHistoryView(
     null,
     data.rows.length
       ? table(
-          ['Topic / type', 'Task type', 'Mode', 'Date', 'Overall', ''],
+          ['Chủ đề / dạng bài', 'Dạng đề', 'Hình thức', 'Ngày', 'Tổng', ''],
           data.rows.map((r) => [
             r.topic,
             taskLabel(r.taskType),
             modeLabel(r.mode),
             formatDate(r.date),
-            r.overall === null ? badge('Pending') : formatBand(r.overall),
-            link(essayHref(r.essayId), 'Open essay'),
+            r.overall === null ? badge('Chờ chấm') : formatBand(r.overall),
+            link(essayHref(r.essayId), 'Mở bài'),
           ]),
-          'Submitted essays by topic, newest first',
+          'Bài đã nộp theo chủ đề, mới nhất trước',
         )
-      : empty('No submitted essays yet.'),
+      : empty('Em chưa nộp bài nào.'),
     ...gapList(
-      'Task 2 topics not yet attempted',
+      'Chủ đề Task 2 em chưa viết',
       data.notAttempted,
-      'You have written about every topic. Great coverage!',
+      'Em đã viết đủ mọi chủ đề. Rất tốt!',
     ),
     ...gapList(
-      'Task 2 essay types not yet attempted',
+      'Dạng bài Task 2 em chưa viết',
       data.essayTypesNotAttempted,
-      'You have tried every essay type.',
+      'Em đã thử mọi dạng bài.',
     ),
     ...gapList(
-      'Task 1 diagram types not yet attempted',
+      'Dạng biểu đồ Task 1 em chưa viết',
       data.diagramTypesNotAttempted,
-      'You have tried every diagram type.',
+      'Em đã thử mọi dạng biểu đồ.',
     ),
   );
 }
 
 export function topicsPage(): Node {
   return page(
-    "Topics I've written",
+    'Chủ đề em đã viết',
     async(
       () => api<TopicHistory>('topics.history'),
       (data) => topicHistoryView(data, (id) => `/essays/${id}`),
-      'Loading topics…',
+      'Đang tải chủ đề…',
     ),
   );
 }

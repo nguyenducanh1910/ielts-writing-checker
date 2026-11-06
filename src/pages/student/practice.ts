@@ -51,35 +51,35 @@ function radioGroup(name: string, legend: string, options: string[]) {
 function gapUi(t: Extract<PracticeTask, { kind: 'gap' }>): TaskUi {
   const input = h('input', { type: 'text', id: `in-${t.id}`, autocomplete: 'off' });
   return {
-    heading: 'Fill the gap with the correct words',
+    heading: 'Điền từ đúng vào chỗ trống',
     body: [
       sentence(t.before, h('span', { class: 'practice-gap' }, '______'), t.after),
-      h('p', { class: 'hint' }, 'You wrote: ', h('span', { class: 'excerpt' }, `“${t.original}”`)),
-      h('label', { for: input.id }, 'Correct words for the gap'),
+      h('p', { class: 'hint' }, 'Em đã viết: ', h('span', { class: 'excerpt' }, `“${t.original}”`)),
+      h('label', { for: input.id }, 'Từ đúng cho chỗ trống'),
       input,
     ],
     check: () => answerMatches(input.value, t.answer),
     reveal: () => [
-      'The correct words are: ',
+      'Từ đúng là: ',
       h('strong', null, t.answer),
       stop(t.answer),
-      'Type them to continue.',
+      'Gõ lại để tiếp tục.',
     ],
     focus: () => input.focus(),
   };
 }
 
 function chooseUi(t: Extract<PracticeTask, { kind: 'choose' }>): TaskUi {
-  const group = radioGroup(`ch-${t.id}`, 'Which version is correct?', t.options);
+  const group = radioGroup(`ch-${t.id}`, 'Câu nào đúng?', t.options);
   return {
-    heading: 'Choose the correct sentence',
+    heading: 'Chọn câu đúng',
     body: [group.fieldset],
     check: () => group.selected() === t.answer,
     reveal: () => [
-      'The correct version is: ',
+      'Câu đúng là: ',
       h('strong', null, t.options[t.answer]),
       stop(t.options[t.answer]),
-      'Choose it to continue.',
+      'Chọn câu đó để tiếp tục.',
     ],
     focus: () => group.inputs[0].focus(),
   };
@@ -88,7 +88,7 @@ function chooseUi(t: Extract<PracticeTask, { kind: 'choose' }>): TaskUi {
 function orderUi(t: Extract<PracticeTask, { kind: 'order' }>): TaskUi {
   const chosen: number[] = [];
   const line = h('span', { class: 'practice-line', 'aria-live': 'polite' });
-  const bank = h('div', { class: 'practice-bank', role: 'group', 'aria-label': 'Words to use' });
+  const bank = h('div', { class: 'practice-bank', role: 'group', 'aria-label': 'Các từ cần dùng' });
   const render = () => {
     replace(
       line,
@@ -99,7 +99,7 @@ function orderUi(t: Extract<PracticeTask, { kind: 'order' }>): TaskUi {
               {
                 type: 'button',
                 class: 'btn btn-small practice-word',
-                'aria-label': `Remove “${t.words[i]}”`,
+                'aria-label': `Bỏ “${t.words[i]}”`,
                 onclick: () => {
                   chosen.splice(chosen.indexOf(i), 1);
                   render();
@@ -108,7 +108,7 @@ function orderUi(t: Extract<PracticeTask, { kind: 'order' }>): TaskUi {
               t.words[i],
             ),
           )
-        : [h('span', { class: 'hint' }, 'Tap the words below in the right order')]),
+        : [h('span', { class: 'hint' }, 'Bấm các từ bên dưới theo đúng thứ tự')]),
     );
     replace(
       bank,
@@ -130,29 +130,29 @@ function orderUi(t: Extract<PracticeTask, { kind: 'order' }>): TaskUi {
     );
   };
   render();
-  const reset = h('button', { type: 'button', class: 'linklike' }, 'Start again');
+  const reset = h('button', { type: 'button', class: 'linklike' }, 'Làm lại');
   reset.addEventListener('click', () => {
     chosen.length = 0;
     render();
   });
   return {
-    heading: 'Put the words in the right order',
+    heading: 'Sắp xếp từ theo đúng thứ tự',
     body: [sentence(t.before, line, t.after), bank, h('p', null, reset)],
     check: () => answerMatches(chosen.map((i) => t.words[i]).join(' '), t.answer),
     reveal: () => [
-      'The correct order is: ',
+      'Thứ tự đúng là: ',
       h('strong', null, t.answer),
       stop(t.answer),
-      'Build it to continue.',
+      'Sắp xếp lại để tiếp tục.',
     ],
     focus: () => bank.querySelector<HTMLButtonElement>('button')?.focus(),
   };
 }
 
 function categoryUi(t: Extract<PracticeTask, { kind: 'category' }>): TaskUi {
-  const group = radioGroup(`cat-${t.id}`, 'What kind of mistake is this?', t.options);
+  const group = radioGroup(`cat-${t.id}`, 'Đây là loại lỗi gì?', t.options);
   return {
-    heading: 'Name the mistake',
+    heading: 'Gọi tên lỗi',
     body: [
       h(
         'p',
@@ -163,7 +163,7 @@ function categoryUi(t: Extract<PracticeTask, { kind: 'category' }>): TaskUi {
       group.fieldset,
     ],
     check: () => group.selected() === t.answer,
-    reveal: () => ['It is: ', h('strong', null, t.options[t.answer]), '. Choose it to continue.'],
+    reveal: () => ['Đó là: ', h('strong', null, t.options[t.answer]), '. Chọn để tiếp tục.'],
     focus: () => group.inputs[0].focus(),
   };
 }
@@ -173,13 +173,13 @@ function matchUi(t: Extract<PracticeTask, { kind: 'match' }>): TaskUi {
     const sel = h(
       'select',
       { id: `m-${t.id}-${i}` },
-      h('option', { value: '' }, 'Choose…'),
+      h('option', { value: '' }, 'Chọn…'),
       ...t.options.map((o, j) => h('option', { value: String(j) }, o)),
     );
     return { item, sel };
   });
   return {
-    heading: 'Match each mistake with its correction',
+    heading: 'Nối mỗi lỗi với cách sửa',
     body: [
       h(
         'div',
@@ -196,7 +196,7 @@ function matchUi(t: Extract<PracticeTask, { kind: 'match' }>): TaskUi {
     ],
     check: () => selects.every(({ sel }, i) => sel.value === String(t.answer[i])),
     reveal: () => [
-      'The matches are: ',
+      'Cặp đúng là: ',
       h(
         'ul',
         null,
@@ -204,7 +204,7 @@ function matchUi(t: Extract<PracticeTask, { kind: 'match' }>): TaskUi {
           h('li', null, `“${item}” → `, h('strong', null, t.options[t.answer[i]])),
         ),
       ),
-      'Choose them to continue.',
+      'Chọn lại để tiếp tục.',
     ],
     focus: () => selects[0]?.sel.focus(),
   };
@@ -230,14 +230,10 @@ export function practiceView(essayId: string, tasks: PracticeTask[], onUnlocked:
   const box = h('div');
 
   const finish = () => {
-    const btn = h(
-      'button',
-      { type: 'button', class: 'btn btn-primary' },
-      'See my score and feedback',
-    );
+    const btn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Xem điểm và nhận xét');
     const status = h('div', { 'aria-live': 'polite' });
     btn.addEventListener('click', () =>
-      busy(btn, 'Unlocking…', async () => {
+      busy(btn, 'Đang mở…', async () => {
         try {
           await api('essays.completePractice', { id: essayId });
           onUnlocked();
@@ -246,16 +242,12 @@ export function practiceView(essayId: string, tasks: PracticeTask[], onUnlocked:
         }
       }),
     );
-    progress.textContent = `All ${tasks.length} tasks done.`;
-    const heading = h('h3', { tabindex: '-1' }, 'Well done!');
+    progress.textContent = `Đã xong cả ${tasks.length} câu.`;
+    const heading = h('h3', { tabindex: '-1' }, 'Làm tốt lắm!');
     replace(
       box,
       heading,
-      h(
-        'p',
-        null,
-        'You have worked through the mistakes in your essay. Your score and feedback are ready.',
-      ),
+      h('p', null, 'Em đã luyện xong các lỗi trong bài. Điểm và nhận xét đã sẵn sàng.'),
       btn,
       status,
     );
@@ -268,9 +260,9 @@ export function practiceView(essayId: string, tasks: PracticeTask[], onUnlocked:
     const ui = taskUi(task);
     let tries = 0;
     let solved = false;
-    progress.textContent = `Task ${index + 1} of ${tasks.length}`;
+    progress.textContent = `Câu ${index + 1}/${tasks.length}`;
     const feedback = h('div', { 'aria-live': 'polite' });
-    const checkBtn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Check');
+    const checkBtn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Kiểm tra');
     const explain = () =>
       task.category || task.note
         ? h(
@@ -298,12 +290,12 @@ export function practiceView(essayId: string, tasks: PracticeTask[], onUnlocked:
         const next = h(
           'button',
           { type: 'button', class: 'btn btn-primary' },
-          index + 1 < tasks.length ? 'Next task' : 'Finish',
+          index + 1 < tasks.length ? 'Câu tiếp theo' : 'Hoàn thành',
         );
         next.addEventListener('click', () => show(index + 1));
         replace(
           feedback,
-          notice('success', h('p', null, h('strong', null, 'Correct!')), explain()),
+          notice('success', h('p', null, h('strong', null, 'Đúng rồi!')), explain()),
           next,
         );
         next.focus();
@@ -313,8 +305,8 @@ export function practiceView(essayId: string, tasks: PracticeTask[], onUnlocked:
       replace(
         feedback,
         tries >= PRACTICE_TRIES_BEFORE_ANSWER
-          ? notice('warning', h('p', null, 'Not quite. ', ui.reveal()), explain())
-          : notice('error', 'Not quite. Look at it again and try once more.'),
+          ? notice('warning', h('p', null, 'Chưa đúng. ', ui.reveal()), explain())
+          : notice('error', 'Chưa đúng. Em xem lại và thử thêm lần nữa.'),
       );
     });
     replace(box, form);
@@ -325,11 +317,11 @@ export function practiceView(essayId: string, tasks: PracticeTask[], onUnlocked:
   return h(
     'section',
     { class: 'card practice', 'aria-labelledby': 'practice-title' },
-    h('h2', { id: 'practice-title' }, 'Before you see your score'),
+    h('h2', { id: 'practice-title' }, 'Trước khi xem điểm'),
     h(
       'p',
       null,
-      `Your teacher has scored this essay and marked some mistakes. Complete these ${tasks.length} short ${tasks.length === 1 ? 'task' : 'tasks'} about them to unlock your band and feedback.`,
+      `Thầy/cô đã chấm bài này và đánh dấu một số lỗi. Em làm ${tasks.length} câu ngắn về các lỗi đó để mở band và nhận xét.`,
     ),
     progress,
     box,

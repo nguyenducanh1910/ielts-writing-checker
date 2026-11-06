@@ -29,7 +29,7 @@ export function dashboardPage(ctx: RouteContext): Node {
     mode: ctx.query.get('mode') ?? undefined,
   };
   return page(
-    'Dashboard',
+    'Thống kê',
     async(
       () =>
         Promise.all([
@@ -40,11 +40,11 @@ export function dashboardPage(ctx: RouteContext): Node {
         const newAssignments = assignments.filter((a) => a.status === 'not_started' && a.isOpen);
         const inProgress = assignments.filter((a) => a.status === 'in_progress');
         return [
-          h('p', null, link('/new', 'Start a new essay', { class: 'btn btn-primary' })),
+          h('p', null, link('/new', 'Viết bài mới', { class: 'btn btn-primary' })),
           newAssignments.length || inProgress.length
             ? notice(
                 'info',
-                h('h2', null, 'New tests from your teacher'),
+                h('h2', null, 'Bài kiểm tra mới thầy/cô giao'),
                 h(
                   'ul',
                   null,
@@ -53,19 +53,19 @@ export function dashboardPage(ctx: RouteContext): Node {
                       'li',
                       null,
                       h('strong', null, a.title),
-                      ` · ${taskLabel(a.taskType)} · ${a.timeLimitMinutes} min · closes ${formatDateTime(a.closesAt)}`,
-                      a.status === 'in_progress' ? ' (in progress)' : '',
+                      ` · ${taskLabel(a.taskType)} · ${a.timeLimitMinutes} phút · hạn ${formatDateTime(a.closesAt)}`,
+                      a.status === 'in_progress' ? ' (đang làm)' : '',
                     ),
                   ),
                 ),
-                link('/assigned', 'Go to Assigned to me'),
+                link('/assigned', 'Mở Bài thầy giao'),
               )
             : null,
           data.rewrites.length
             ? h(
                 'section',
                 { class: 'card' },
-                h('h2', null, 'Upcoming rewrite deadlines'),
+                h('h2', null, 'Hạn viết lại sắp tới'),
                 h(
                   'ul',
                   null,
@@ -74,14 +74,14 @@ export function dashboardPage(ctx: RouteContext): Node {
                       'li',
                       null,
                       link(`/essays/${r.essayId}`, r.topic),
-                      ` — due ${formatDateTime(r.dueAt)} `,
+                      ` — hạn ${formatDateTime(r.dueAt)} `,
                       h(
                         'strong',
                         { class: r.status === 'overdue' ? 'down' : '' },
                         `(${countdown(r.dueAt)})`,
                       ),
                       ' ',
-                      link(`/rewrite/${r.essayId}`, 'Submit rewrite'),
+                      link(`/rewrite/${r.essayId}`, 'Nộp bài viết lại'),
                     ),
                   ),
                 ),
@@ -101,28 +101,28 @@ export function dashboardPage(ctx: RouteContext): Node {
             h(
               'div',
               { class: 'stat' },
-              'Essays submitted',
+              'Bài đã nộp',
               h('strong', null, String(data.counts.submitted)),
             ),
-            h('div', { class: 'stat' }, 'Scored', h('strong', null, String(data.counts.scored))),
+            h('div', { class: 'stat' }, 'Đã chấm', h('strong', null, String(data.counts.scored))),
             h(
               'div',
               { class: 'stat' },
-              'Latest band',
+              'Band gần nhất',
               h('strong', null, formatBand(data.bandOverTime.at(-1)?.overall ?? null)),
             ),
             h(
               'div',
               { class: 'stat' },
-              'Target band',
+              'Band mục tiêu',
               h('strong', null, formatBand(data.targetBand)),
-              data.targetBand === null ? link('/settings', 'Set target') : null,
+              data.targetBand === null ? link('/settings', 'Đặt mục tiêu') : null,
             ),
             data.examDate
               ? h(
                   'div',
                   { class: 'stat' },
-                  'Exam date',
+                  'Ngày thi',
                   h('strong', null, formatDate(data.examDate)),
                 )
               : null,
@@ -130,7 +130,7 @@ export function dashboardPage(ctx: RouteContext): Node {
           h(
             'section',
             { class: 'card' },
-            h('h2', null, 'Overall band over time'),
+            h('h2', null, 'Band tổng theo thời gian'),
             bandChart(data.bandOverTime, data.targetBand),
           ),
           h(
@@ -139,21 +139,21 @@ export function dashboardPage(ctx: RouteContext): Node {
             h(
               'section',
               { class: 'card' },
-              h('h2', null, 'Average by criterion'),
+              h('h2', null, 'Trung bình theo tiêu chí'),
               criteriaChart(data.criterionAverages),
             ),
             h(
               'section',
               { class: 'card' },
-              h('h2', null, 'Essays per week'),
+              h('h2', null, 'Số bài mỗi tuần'),
               perWeekChart(data.perWeek),
             ),
           ),
-          h('h2', null, 'Your most frequent errors'),
+          h('h2', null, 'Lỗi em hay mắc nhất'),
           topErrorsSection(data.topErrors),
         ];
       },
-      'Loading your dashboard…',
+      'Đang tải thống kê…',
     ),
   );
 }

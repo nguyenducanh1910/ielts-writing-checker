@@ -31,7 +31,7 @@ export function settingsPage(): Node {
     'targetBand',
     BANDS.map((b) => ({ value: b, label: b })),
     user.targetBand !== null ? user.targetBand.toFixed(1) : '',
-    'Not set',
+    'Chưa đặt',
   );
   const exam = h('input', { type: 'date', name: 'examDate', value: user.examDate });
   const tz = h('input', {
@@ -40,25 +40,25 @@ export function settingsPage(): Node {
     maxlength: '64',
   });
   const status = h('div', { 'aria-live': 'polite' });
-  const save = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Save settings');
+  const save = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Lưu cài đặt');
   const form = h(
     'form',
     { class: 'card narrow', novalidate: true },
-    field({ label: 'Name', control: name, name: 'name' }),
-    field({ label: 'Target band', control: target, name: 'targetBand' }),
-    field({ label: 'Exam date', control: exam, name: 'examDate' }),
+    field({ label: 'Họ tên', control: name, name: 'name' }),
+    field({ label: 'Band mục tiêu', control: target, name: 'targetBand' }),
+    field({ label: 'Ngày thi', control: exam, name: 'examDate' }),
     field({
-      label: 'Time zone',
+      label: 'Múi giờ',
       control: tz,
       name: 'timezone',
-      hint: `Used for rewrite due dates. This browser uses ${localTimeZone()}.`,
+      hint: `Dùng cho hạn viết lại. Trình duyệt này đang dùng ${localTimeZone()}.`,
     }),
     save,
     status,
   );
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    void busy(save, 'Saving…', async () => {
+    void busy(save, 'Đang lưu…', async () => {
       try {
         const updated = await api<SessionUser>('me.update', {
           name: name.value,
@@ -68,7 +68,7 @@ export function settingsPage(): Node {
         });
         setUser(updated);
         showFieldErrors(form, {});
-        replace(status, notice('success', 'Settings saved.'));
+        replace(status, notice('success', 'Đã lưu cài đặt.'));
       } catch (err) {
         if (err instanceof ApiClientError) showFieldErrors(form, err.fields);
         replace(status, errorBox(err));
@@ -83,33 +83,33 @@ export function settingsPage(): Node {
   const delBtn = h(
     'button',
     { type: 'submit', class: 'btn btn-danger' },
-    'Delete my account and all my data',
+    'Xoá tài khoản và toàn bộ dữ liệu của em',
   );
   const delForm = h(
     'form',
     { class: 'card narrow danger-zone', novalidate: true },
-    h('h2', null, 'Delete my account and all my data'),
+    h('h2', null, 'Xoá tài khoản và toàn bộ dữ liệu của em'),
     h(
       'p',
       null,
-      'This removes your essays, scores, feedback and error log, moves your essay folders to the trash and logs you out everywhere. It cannot be undone.',
+      'Thao tác này xoá bài viết, điểm, nhận xét và lịch sử lỗi của em, chuyển thư mục bài vào thùng rác và đăng xuất em khỏi mọi thiết bị. Không khôi phục được.',
     ),
-    field({ label: 'Type DELETE to confirm', control: confirmInput, name: 'confirm' }),
+    field({ label: 'Gõ DELETE để xác nhận', control: confirmInput, name: 'confirm' }),
     delBtn,
     delStatus,
   );
   delForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (confirmInput.value !== 'DELETE')
-      return showFieldErrors(delForm, { confirm: 'Type DELETE to confirm' });
+      return showFieldErrors(delForm, { confirm: 'Gõ DELETE để xác nhận' });
     const ok = await confirmDialog({
-      title: 'Delete your account?',
-      message: 'All your data will be removed. This cannot be undone.',
-      confirmLabel: 'Delete everything',
+      title: 'Xoá tài khoản?',
+      message: 'Toàn bộ dữ liệu của em sẽ bị xoá, không khôi phục được.',
+      confirmLabel: 'Xoá tất cả',
       danger: true,
     });
     if (!ok) return;
-    await busy(delBtn, 'Deleting…', async () => {
+    await busy(delBtn, 'Đang xoá…', async () => {
       try {
         await api('me.delete', { confirm: 'DELETE' });
         clearSession();
@@ -120,7 +120,7 @@ export function settingsPage(): Node {
     });
   });
 
-  return page('Settings', form, pwForm, user.role === 'student' ? delForm : null);
+  return page('Cài đặt', form, pwForm, user.role === 'student' ? delForm : null);
 }
 
 /** Set a first password (after a login link) or change the current one. */
@@ -142,23 +142,23 @@ function passwordForm(message?: Node): HTMLElement {
   const save = h(
     'button',
     { type: 'submit', class: 'btn btn-primary' },
-    hasPassword ? 'Change password' : 'Set password',
+    hasPassword ? 'Đổi mật khẩu' : 'Đặt mật khẩu',
   );
   const form = h(
     'form',
     { class: 'card narrow', novalidate: true },
-    h('h2', null, 'Password'),
+    h('h2', null, 'Mật khẩu'),
     hasPassword
       ? null
-      : h('p', null, 'Choose a password so you can log in with your email and password next time.'),
+      : h('p', null, 'Đặt mật khẩu để lần sau em đăng nhập bằng email và mật khẩu.'),
     hasPassword
-      ? field({ label: 'Current password', control: current, name: 'currentPassword' })
+      ? field({ label: 'Mật khẩu hiện tại', control: current, name: 'currentPassword' })
       : null,
     field({
-      label: 'New password',
+      label: 'Mật khẩu mới',
       control: next,
       name: 'newPassword',
-      hint: 'At least 8 characters.',
+      hint: 'Ít nhất 8 ký tự.',
     }),
     save,
     status,
@@ -166,16 +166,16 @@ function passwordForm(message?: Node): HTMLElement {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (next.value.length < 8) {
-      return showFieldErrors(form, { newPassword: 'Use at least 8 characters' });
+      return showFieldErrors(form, { newPassword: 'Dùng ít nhất 8 ký tự' });
     }
-    void busy(save, 'Saving…', async () => {
+    void busy(save, 'Đang lưu…', async () => {
       try {
         const updated = await api<SessionUser>('me.setPassword', {
           currentPassword: hasPassword ? current.value : undefined,
           newPassword: next.value,
         });
         setUser(updated);
-        form.replaceWith(passwordForm(notice('success', 'Password saved.')));
+        form.replaceWith(passwordForm(notice('success', 'Đã lưu mật khẩu.')));
       } catch (err) {
         if (err instanceof ApiClientError) showFieldErrors(form, err.fields);
         replace(status, errorBox(err));
