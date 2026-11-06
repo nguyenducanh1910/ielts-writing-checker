@@ -43,6 +43,18 @@ export interface Overview {
   templates?: Array<{ id: string; name: string }>;
   /** Since when Gemini has been overloaded (ISO), '' when it works. */
   aiDownSince?: string;
+  /** "Việc cần làm hôm nay": submissions to check by hand, Forms done but not turned in. */
+  todoItems?: { manual: TodoItem[]; formPending: TodoItem[] };
+}
+
+export interface TodoItem {
+  id: string;
+  student: string;
+  title: string;
+  className: string;
+  skill: string;
+  status: string;
+  dueAt?: string;
 }
 
 export interface NewClass {

@@ -5,7 +5,7 @@ import { type Child, h, replace } from '../../dom';
 import { async, busy, empty, errorBox, link, notice } from '../../ui/components';
 import { newClassesSection, refreshClassesButton } from './newClasses';
 import type { QueueResponse } from '../admin/types';
-import type { Health, Overview, OverviewAssignment } from './types';
+import type { Health, Overview, OverviewAssignment, TodoItem } from './types';
 import { dueText, externalLink, pageHeader, progress, statTile, viDateTime } from './ui';
 
 async function load() {
@@ -125,6 +125,40 @@ export function overviewPage(): Node {
   );
 }
 
+/** "Việc cần làm hôm nay": what the stat tiles cannot show by name. */
+function todoSection(ov: Overview): Child {
+  const manual = ov.todoItems?.manual ?? [];
+  const form = ov.todoItems?.formPending ?? [];
+  if (!manual.length && !form.length) return null;
+  const line = (x: TodoItem, detail: string, view: string) =>
+    h(
+      'li',
+      null,
+      link(`/lop/bai-nop?view=${view}&q=${encodeURIComponent(x.student)}`, x.student),
+      ` — ${x.title} · ${x.className}`,
+      detail ? h('span', { class: 'muted' }, ` · ${detail}`) : null,
+    );
+  const reason = (s: string) => s.replace(/^(Lỗi[^:]*:|Bỏ qua:)\s*/, '').slice(0, 120);
+  return h(
+    'section',
+    { class: 'card', 'aria-labelledby': 'todo-heading' },
+    h('h2', { id: 'todo-heading' }, 'Việc cần làm hôm nay'),
+    manual.length
+      ? [
+          h('h3', null, `Cần xem tay (${manual.length})`),
+          h('ul', null, ...manual.map((x) => line(x, `${x.skill}: ${reason(x.status)}`, 'error'))),
+        ]
+      : null,
+    form.length
+      ? [
+          h('h3', null, `Đã làm Form nhưng chưa bấm Nộp (${form.length})`),
+          h('p', { class: 'muted' }, 'Hệ thống đã nhắc các em trong email nhắc nộp bài lúc 19h.'),
+          h('ul', null, ...form.map((x) => line(x, x.skill, 'missing'))),
+        ]
+      : null,
+  );
+}
+
 function overviewContent(ov: Overview, writingQueue: number | null, reload: () => void): Child[] {
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long',
@@ -149,6 +183,7 @@ function overviewContent(ov: Overview, writingQueue: number | null, reload: () =
         )
       : null,
     newClassesSection(ov.newClasses, ov.templates),
+    todoSection(ov),
     h(
       'div',
       { class: 'cl-stats' },
