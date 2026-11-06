@@ -4,7 +4,7 @@ import { classroom } from '../../classroomApi';
 import { type Child, h, replace } from '../../dom';
 import { async, busy, empty, errorBox, link, notice } from '../../ui/components';
 import { newClassesSection, refreshClassesButton } from './newClasses';
-import type { QueueResponse } from '../admin/types';
+import type { QueueItem, QueueResponse } from '../admin/types';
 import type { Health, Overview, OverviewAssignment, TodoItem } from './types';
 import { dueText, externalLink, pageHeader, progress, statTile, viDateTime } from './ui';
 
@@ -13,7 +13,8 @@ async function load() {
     classroom<Overview>('overview'),
     api<QueueResponse>('admin.queue', {}).catch(() => null),
   ]);
-  return { ov, writingQueue: queue ? queue.items.length : null };
+  const waiting = queue ? queue.items.filter((x) => !x.scoredAt) : null;
+  return { ov, writing: waiting };
 }
 
 function assignmentCard(a: OverviewAssignment): HTMLElement {
@@ -119,17 +120,25 @@ export function overviewPage(): Node {
     { class: 'page cl-page' },
     async(
       load,
-      ({ ov, writingQueue }, reload) => overviewContent(ov, writingQueue, reload),
+      ({ ov, writing }, reload) => overviewContent(ov, writing, reload),
       'Đang tải dữ liệu lớp học…',
     ),
   );
 }
 
 /** "Việc cần làm hôm nay": what the stat tiles cannot show by name. */
-function todoSection(ov: Overview): Child {
+function todoSection(ov: Overview, writing: QueueItem[]): Child {
   const manual = ov.todoItems?.manual ?? [];
   const form = ov.todoItems?.formPending ?? [];
-  if (!manual.length && !form.length) return null;
+  if (!manual.length && !form.length && !writing.length) return null;
+  const essayLine = (x: QueueItem) =>
+    h(
+      'li',
+      null,
+      link(`/admin/score/${x.id}`, x.studentName),
+      ` — ${x.assignmentTitle ?? x.topic}`,
+      h('span', { class: 'muted' }, ` · nộp ${viDateTime(x.submittedAt)}`),
+    );
   const line = (x: TodoItem, detail: string, view: string) =>
     h(
       'li',
@@ -143,6 +152,13 @@ function todoSection(ov: Overview): Child {
     'section',
     { class: 'card', 'aria-labelledby': 'todo-heading' },
     h('h2', { id: 'todo-heading' }, 'Việc cần làm hôm nay'),
+    writing.length
+      ? [
+          h('h3', null, `Writing chờ chấm (${writing.length})`),
+          h('ul', null, ...writing.slice(0, 15).map(essayLine)),
+          writing.length > 15 ? h('p', null, link('/admin', 'Xem cả hàng chờ →')) : null,
+        ]
+      : null,
     manual.length
       ? [
           h('h3', null, `Cần xem tay (${manual.length})`),
@@ -177,7 +193,8 @@ function syncNowButton(reload: () => void): HTMLElement {
   return h('span', null, btn, status);
 }
 
-function overviewContent(ov: Overview, writingQueue: number | null, reload: () => void): Child[] {
+function overviewContent(ov: Overview, writing: QueueItem[] | null, reload: () => void): Child[] {
+  const writingQueue = writing ? writing.length : null;
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long',
     day: 'numeric',
@@ -202,7 +219,7 @@ function overviewContent(ov: Overview, writingQueue: number | null, reload: () =
         )
       : null,
     newClassesSection(ov.newClasses, ov.templates),
-    todoSection(ov),
+    todoSection(ov, writing ?? []),
     h(
       'div',
       { class: 'cl-stats' },

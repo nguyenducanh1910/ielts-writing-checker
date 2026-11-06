@@ -251,6 +251,8 @@ export interface StudentPart {
   summary: string;
   sentAt: string;
   feedbackFile: string;
+  /** Writing essay on this site (scored or not): the student opens it at /essays/<id>. */
+  essayId?: string;
 }
 
 export interface StudentAssignment {

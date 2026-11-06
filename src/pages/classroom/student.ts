@@ -85,6 +85,13 @@ function resultCard(a: StudentAssignment): HTMLElement {
               )
             : null,
           p.feedbackFile ? externalLink(p.feedbackFile, 'Nhận xét chi tiết ↗') : null,
+          p.essayId
+            ? link(
+                `/essays/${p.essayId}`,
+                p.state === 'sent' ? 'Xem bài chữa →' : 'Xem bài em đã nộp →',
+                { class: 'cl-part-link' },
+              )
+            : null,
         ),
       ),
     ),
@@ -109,6 +116,7 @@ export function studentClassroomPage(): Node {
                 null,
                 'Hãy đăng nhập web này bằng đúng email em dùng trên Google Classroom, hoặc báo thầy/cô để ghép tài khoản.',
               ),
+              h('p', null, link('/essays', 'Xem các bài Writing của em →')),
             ),
           ];
         }

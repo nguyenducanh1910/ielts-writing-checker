@@ -25,12 +25,3 @@ export const routes: Route[] = [
     render: studentClassroomPage,
   },
 ];
-
-/** Admin menu sections: the class system and the Writing site. */
-export const CLASSROOM_NAV: Array<[string, string]> = [
-  ['/lop', 'Tổng quan'],
-  ['/lop/bai-nop', 'Bài nộp'],
-  ['/lop/giao-bai', 'Giao bài'],
-  ['/lop/ket-qua', 'Kết quả & phạt'],
-  ['/lop/hoc-sinh', 'Học sinh'],
-];

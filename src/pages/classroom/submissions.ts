@@ -39,7 +39,7 @@ function withQuery(base: Record<string, string>, patch: Record<string, string>):
 /** A link stored as "<writing site>#/admin/score/<id>" opens inside this site. */
 function writingScoreLink(url: string): HTMLElement | null {
   const m = /#(\/admin\/score\/[\w-]+)/.exec(url);
-  if (m) return link(m[1], 'Chấm trên web Writing →', { class: 'btn btn-primary btn-small' });
+  if (m) return link(m[1], 'Chấm bài Writing →', { class: 'btn btn-primary btn-small' });
   return url ? externalLink(url, 'Mở file nhận xét ↗', 'btn btn-small') : null;
 }
 
