@@ -39,25 +39,25 @@ test('student submits an essay; admin scores it with Claude and an external tool
 
   // ---- Saves a draft ----
   await page.goto('#/new?mode=practice');
-  await page.getByLabel('Task type').selectOption('task2');
+  await page.getByLabel('Dạng đề').selectOption('task2');
   await page.getByLabel('Topic').selectOption({ label: 'Education' });
   await page.getByLabel('Essay type').selectOption({ label: 'Discussion' });
   await page
-    .getByLabel('Task prompt')
+    .getByLabel('Đề bài')
     .fill(
       'Some people think university education should be free. Discuss both views and give your opinion.',
     );
-  await page.getByLabel('Your essay').fill(ESSAY);
-  await expect(page.getByText(/\d+ words/)).toBeVisible();
-  await page.getByRole('button', { name: 'Save draft' }).click();
-  await expect(page.getByText(/Draft saved at/)).toBeVisible();
+  await page.getByLabel('Bài viết của em').fill(ESSAY);
+  await expect(page.getByText(/\d+ từ/)).toBeVisible();
+  await page.getByRole('button', { name: 'Lưu nháp' }).click();
+  await expect(page.getByText(/Đã lưu nháp lúc/)).toBeVisible();
   await expect(page).toHaveURL(/#\/write\//);
 
   // ---- Submits ----
-  await page.getByRole('button', { name: 'Submit', exact: true }).click();
-  await expect(page.getByText("You can't edit after submitting.")).toBeVisible();
-  await page.getByRole('dialog').getByRole('button', { name: 'Submit' }).click();
-  await expect(page.getByText(/^Submitted\. Your teacher will score it soon/)).toBeVisible();
+  await page.getByRole('button', { name: 'Nộp bài', exact: true }).click();
+  await expect(page.getByText('Sau khi nộp em sẽ không sửa được nữa.')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Nộp bài' }).click();
+  await expect(page.getByText(/^Đã nộp\. Thầy\/cô sẽ sớm chấm/)).toBeVisible();
   const essayUrl = page.url();
   const essayId = /#\/essays\/([^/?]+)/.exec(essayUrl)![1];
 
@@ -215,11 +215,11 @@ test('student submits an essay; admin scores it with Claude and an external tool
   // ---- The result is locked until the student practises their errors ----
   await expect(page.locator('.band-hero')).toHaveCount(0);
   await expect(page.getByText('6.0')).toHaveCount(0);
-  await expect(page.getByText('A rewrite is required by')).toBeVisible();
+  await expect(page.getByText('Em cần viết lại trước')).toBeVisible();
   const tasks = await completePractice(page);
   expect(tasks.length).toBeGreaterThan(0);
   await expect(page.locator('.band-hero strong')).toHaveText('6.0');
-  await expect(page.getByRole('heading', { name: 'Rewrite required' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cần viết lại' })).toBeVisible();
   await expect(page.getByText('AI4IELTS')).toHaveCount(0);
   await expect(page.getByText('Great essay!')).toHaveCount(0);
 });

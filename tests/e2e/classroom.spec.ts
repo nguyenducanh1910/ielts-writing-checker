@@ -24,6 +24,9 @@ test('teacher reviews a Speaking result and sends it', async ({ page }) => {
   const nav = page.getByRole('navigation', { name: 'Main' });
   await expect(nav.getByRole('link', { name: 'Chấm Writing' })).toBeVisible();
   await expect(nav.getByText('Công cụ Writing')).toBeVisible();
+  await expect(page.getByTestId('runtime')).toContainText(
+    'Chạy tự động hôm nay: khoảng 23/90 phút',
+  );
   await page.getByRole('link', { name: /Speaking chờ duyệt/ }).click();
   await expect(page.getByRole('heading', { name: 'Bài nộp' })).toBeVisible();
   const first = page.locator('.cl-sub').first();

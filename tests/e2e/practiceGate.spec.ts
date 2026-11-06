@@ -111,22 +111,22 @@ test('the result unlocks after the error practice, and the teacher sees it', asy
   await page.goto(await loginLink(page, 'demo.an@example.com'));
   await page.goto('#/essays');
   const row = page.getByRole('row', { name: /Education · Agree or disagree/ });
-  await expect(row.getByText('Practice to unlock')).toBeVisible();
+  await expect(row.getByText('Luyện lỗi để xem điểm')).toBeVisible();
   await row.getByRole('link').first().click();
-  await expect(page.getByRole('heading', { name: 'Before you see your score' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Trước khi xem điểm' })).toBeVisible();
   await expect(page.locator('.band-hero')).toHaveCount(0);
   await noViolations(page);
 
   const headings = await completePractice(page);
   expect(headings).toEqual([
-    'Fill the gap with the correct words',
-    'Choose the correct sentence',
-    'Put the words in the right order',
-    'Name the mistake',
-    'Match each mistake with its correction',
+    'Điền từ đúng vào chỗ trống',
+    'Chọn câu đúng',
+    'Sắp xếp từ theo đúng thứ tự',
+    'Gọi tên lỗi',
+    'Nối mỗi lỗi với cách sửa',
   ]);
   await expect(page.locator('.band-hero strong')).toHaveText('6.0');
-  await expect(page.getByRole('heading', { name: 'Errors (5)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lỗi (5)' })).toBeVisible();
 
   // The teacher: the scored view shows the result was seen and the practice done.
   await page.getByRole('button', { name: 'Log out' }).click();

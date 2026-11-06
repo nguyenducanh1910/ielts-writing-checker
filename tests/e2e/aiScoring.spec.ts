@@ -85,11 +85,9 @@ test('Gemini scores and reconciles with the pasted Claude draft (no API cost)', 
   await page.getByRole('button', { name: 'Kiểm tra kết nối' }).click();
   await expect(page.getByText(/Gemini: Kết nối được/)).toBeVisible();
 
-  // ---- Scoring page: needs Claude's draft first ----
+  // ---- Scoring page: Claude's draft, then Gemini reconciles ----
   await page.goto(`#/admin/score/${essayId}`);
   await expect(page.getByRole('heading', { name: /Score: Nguyen Van An/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Bắt đầu chấm (Gemini)' }).click();
-  await expect(page.getByText(/Dán bản chấm của Claude trước/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Paste Claude draft' }).click();
   await page.getByLabel('Claude reply').fill(JSON.stringify(claude));
@@ -113,4 +111,42 @@ test('Gemini scores and reconciles with the pasted Claude draft (no API cost)', 
   await expect(
     page.getByRole('row', { name: /Nguyen Van An/ }).getByText('Gemini: đã đối chiếu'),
   ).toBeVisible();
+});
+
+test('an essay Gemini drafted on its own opens with the draft in the form', async ({ page }) => {
+  await page.request.get(`${API}/__test/reset`);
+  const token = new URL(
+    (await loginLink(page, 'admin@example.com')).replace('#/', ''),
+  ).searchParams.get('token');
+  const admin = (await post(page, 'auth.exchange', { token })).sessionToken as string;
+  const config = await post(page, 'config.get', {});
+  const queue = await post(page, 'admin.queue', {}, admin);
+  const an = queue.students.find((s: any) => s.name === 'Nguyen Van An').id;
+  const created = await post(
+    page,
+    'admin.essays.create',
+    {
+      studentId: an,
+      taskType: 'task2',
+      topicId: config.topics.find((t: any) => t.label === 'Education').id,
+      essayType: 'agree_disagree',
+      prompt: 'Some people think university should be free. Do you agree or disagree?',
+      body: BODY,
+    },
+    admin,
+  );
+  const essayId = (created.essayId ?? created.id) as string;
+  await post(page, 'admin.ai.saveSettings', { geminiKey: 'AIzaTestKey_0123456789abcdef' }, admin);
+  // No Claude draft: Gemini scores alone (what happens right after a Classroom import).
+  const res = await post(page, 'admin.ai.score', { essayId }, admin);
+  expect(res.claudeDraft).toBeNull();
+
+  await page.goto(await loginLink(page, 'admin@example.com'));
+  await expect(page.getByRole('heading', { name: /^Chào/ })).toBeVisible();
+  await page.goto(`#/admin/score/${essayId}`);
+  await expect(page.getByText(/The AI \(Gemini\) draft is loaded into the form/)).toBeVisible();
+  await expect(page.locator('output.overall')).not.toHaveText(/—|Overall band –/);
+  // Nothing typed yet: leaving the page asks nothing.
+  await page.getByRole('link', { name: '← Back to the queue' }).click();
+  await expect(page.getByRole('heading', { name: 'Scoring queue' })).toBeVisible();
 });
