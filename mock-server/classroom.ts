@@ -166,7 +166,7 @@ function seed(now: number) {
             s.gradeKind = done ? 'sent' : 'web';
             s.band = done ? String(5 + Math.round(r() * 3) / 2) : '';
             s.sentAt = done ? iso(due + 2 * DAY) : '';
-            s.feedbackFile = '#/admin';
+            s.feedbackFile = `https://example.test/#/admin/score/mock-essay-${si}`;
           } else {
             const b = 5 + Math.round(r() * 4) / 2;
             const kind =
@@ -863,6 +863,7 @@ export function createClassroomMock(getSvc: () => MemoryServices) {
             summary: s.sentAt ? s.summary : '',
             sentAt: s.sentAt,
             feedbackFile: s.sentAt && /^https:\/\/docs/.test(s.feedbackFile) ? s.feedbackFile : '',
+            essayId: (/#\/admin\/score\/([\w-]+)/.exec(s.feedbackFile) ?? [])[1] ?? '',
           })),
         };
       })
