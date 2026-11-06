@@ -91,6 +91,8 @@ export function essayDetailPage(ctx: RouteContext): Node {
   return async(
     () => api<EssayDetail>('essays.get', { id: ctx.params.id }),
     (essay, reload) => {
+      // Older or partial server answers may leave the error list out: show the essay anyway.
+      const errors: ErrorView[] = Array.isArray(essay.errors) ? essay.errors : [];
       // The teacher sees whether the student opened the result (the first visit is kept).
       if (essay.status === 'scored' && !essay.resultViewed) {
         void api('essays.markViewed', { id: essay.id }).catch(() => undefined);
@@ -121,7 +123,7 @@ export function essayDetailPage(ctx: RouteContext): Node {
           textBox,
           essayText(
             essay.body,
-            essay.errors.map((e) => ({
+            errors.map((e) => ({
               id: e.id,
               start: e.start,
               end: e.end,
@@ -290,8 +292,8 @@ export function essayDetailPage(ctx: RouteContext): Node {
             h(
               'div',
               null,
-              h('h2', null, `Errors (${essay.errors.length})`),
-              errorList(essay.errors, (id) => {
+              h('h2', null, `Errors (${errors.length})`),
+              errorList(errors, (id) => {
                 active = id;
                 renderText();
               }),
