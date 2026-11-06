@@ -9,17 +9,38 @@ const SOURCE = readFileSync(new URL('../../classroom/Code.gs', import.meta.url),
 
 type Sandbox = Record<string, any>;
 
+/** Script Properties kept in memory. */
+function memoryProps(initial: Record<string, string> = {}) {
+  const data: Record<string, string> = { ...initial };
+  return {
+    data,
+    service: {
+      getScriptProperties: () => ({
+        getProperty: (k: string) => (k in data ? data[k] : null),
+        setProperty: (k: string, v: string) => {
+          data[k] = v;
+        },
+        deleteProperty: (k: string) => {
+          delete data[k];
+        },
+        getProperties: () => ({ ...data }),
+      }),
+    },
+  };
+}
+
 function load(globals: Sandbox = {}): Sandbox {
   const ctx: Sandbox = {
     console: { log: () => undefined },
     Session: { getScriptTimeZone: () => 'Asia/Ho_Chi_Minh' },
+    PropertiesService: memoryProps().service,
     ...globals,
   };
   vm.createContext(ctx);
   // Top-level `const`/`let` are not properties of the sandbox: expose what the tests use.
   vm.runInContext(
     `${SOURCE}
-;this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES,
+;this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES, RUNTIME_WARN_MIN,
   setProvider: (p) => { AI_PROVIDER_ = p; }, provider: () => AI_PROVIDER_ };`,
     ctx,
   );
@@ -151,5 +172,67 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(
       gs.callGroq_([{ text: 'a' }, { inline_data: { mime_type: 'application/pdf', data: 'x' } }]),
     ).toBeUndefined();
+  });
+
+  it('adds up the time automatic runs take and warns the teacher once', () => {
+    const props = memoryProps();
+    const mails: string[] = [];
+    const logs: string[] = [];
+    const gs = load({
+      PropertiesService: props.service,
+      Utilities: { formatDate: () => '20261107' },
+      MailApp: { sendEmail: (m: { subject: string }) => mails.push(m.subject) },
+    });
+    gs.getConfig_ = () => ({ reportEmail: 'teacher@example.com' });
+    gs.log_ = (title: string) => logs.push(title);
+    gs.addRuntime_(30 * 60000);
+    expect(gs.runtimeTodayMs_()).toBe(30 * 60000);
+    expect(mails).toHaveLength(0);
+    gs.addRuntime_(45 * 60000);
+    gs.addRuntime_(60000);
+    expect(mails).toHaveLength(1);
+    expect(logs).toEqual(['Sắp hết thời gian chạy']);
+  });
+
+  it('stops the quick update when the day is almost used up', () => {
+    const props = memoryProps({ RT_10: String(80 * 60000) });
+    let synced = false;
+    const gs = load({
+      PropertiesService: props.service,
+      Utilities: { formatDate: () => '10' },
+    });
+    gs.syncAll_ = () => {
+      synced = true;
+      return '';
+    };
+    gs.quickSyncJob();
+    expect(synced).toBe(false);
+  });
+
+  it('keeps the 8 newest backups of each kind', () => {
+    const trashed: string[] = [];
+    const file = (name: string, day: number) => ({
+      getName: () => name,
+      getDateCreated: () => new Date(2026, 0, day),
+      setTrashed: () => trashed.push(name),
+    });
+    const files = [
+      ...Array.from({ length: 10 }, (_, i) => file(`Sao lưu ${i} · Lớp học · Sheet`, i + 1)),
+      ...Array.from({ length: 9 }, (_, i) => file(`Sao lưu ${i} · Dữ liệu web Writing`, i + 1)),
+      file('Ghi chú của thầy', 1),
+    ];
+    const folder = {
+      getFiles: () => {
+        let i = 0;
+        return { hasNext: () => i < files.length, next: () => files[i++] };
+      },
+    };
+    const gs = load();
+    expect(gs.pruneBackups_(folder)).toBe(3);
+    expect(trashed.sort()).toEqual([
+      'Sao lưu 0 · Dữ liệu web Writing',
+      'Sao lưu 0 · Lớp học · Sheet',
+      'Sao lưu 1 · Lớp học · Sheet',
+    ]);
   });
 });

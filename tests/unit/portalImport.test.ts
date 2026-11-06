@@ -253,4 +253,20 @@ describe('classes created from IELTS Harper Portal', () => {
       app.raw('portal.classes.ensure', { secret: 'nope', label: 'X', students: [] }),
     ).toMatchObject({ ok: false, error: { code: 'forbidden' } });
   });
+
+  it('queues a Gemini draft for an essay from Classroom unless the teacher turned it off', () => {
+    const { app, admin, base } = setup();
+    // No key yet: nothing queued.
+    expect(app.call('portal.essays.import', base()).aiQueued).toBe(false);
+    app.call('admin.ai.saveSettings', { geminiKey: 'AIzaTestKey_0123456789abcdef' }, admin);
+    const res = app.call('portal.essays.import', base({ submissionId: 'sub-auto-2' }));
+    expect(res.aiQueued).toBe(true);
+    expect(app.db().findOne('AiJobs', (j) => j.essay_id === res.essayId)?.status).toBe('queued');
+    expect(app.svc.scheduled).toContain('aiJob');
+    const off = app.call('admin.ai.saveSettings', { autoDraft: false }, admin);
+    expect(off.autoDraft).toBe(false);
+    expect(app.call('portal.essays.import', base({ submissionId: 'sub-auto-3' })).aiQueued).toBe(
+      false,
+    );
+  });
 });

@@ -131,7 +131,7 @@ describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
     expect(s).toMatchObject({ hasGeminiKey: true });
   });
 
-  it('needs the Gemini key and a pasted Claude draft first', () => {
+  it('needs the Gemini key; scores alone without a Claude draft, reconciles with one', () => {
     const { app, admin, essayId, pasteClaude } = prepare();
     expect(app.raw('admin.ai.score', { essayId }, admin)).toMatchObject({
       ok: false,
@@ -140,10 +140,13 @@ describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
     const s = app.call('admin.ai.saveSettings', { geminiKey: KEY }, admin);
     expect(s).toMatchObject({ hasGeminiKey: true, geminiModel: 'gemini-flash-latest' });
     expect(JSON.stringify(s)).not.toContain(KEY);
-    expect(app.raw('admin.ai.score', { essayId }, admin)).toMatchObject({
-      ok: false,
-      error: { code: 'conflict', message: expect.stringContaining('Copy for Claude') },
-    });
+    // Without a Claude draft Gemini scores alone; its draft is what the form loads.
+    const solo = app.call('admin.ai.score', { essayId }, admin);
+    expect(solo.claudeDraft).toBeNull();
+    expect(solo.reconciled).toBeNull();
+    expect(solo.aiDraft.scores).toEqual({ task: 7, coherence: 6.5, lexical: 7, grammar: 6.5 });
+    expect(app.call('admin.essay', { id: essayId }, admin).aiDraft.parsed.scores.task).toBe(7);
+    app.svc.http.requests.length = 0;
     pasteClaude();
     const res = app.call('admin.ai.score', { essayId }, admin);
     expect(res.reconciled.scores).toEqual({ task: 6.5, coherence: 6, lexical: 6.5, grammar: 6 });
@@ -179,15 +182,13 @@ describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
     expect(res.warnings.join(' ')).toContain('quá tải');
   });
 
-  it('scores queued essays in the background and skips those without a Claude draft', () => {
-    const { app, admin, essayId, pasteClaude } = prepare();
+  it('scores queued essays in the background, with or without a Claude draft', () => {
+    const { app, admin, essayId } = prepare();
     app.call('admin.ai.saveSettings', { geminiKey: KEY }, admin);
     expect(app.call('admin.ai.queue', { essayIds: [essayId] }, admin)).toMatchObject({
-      queued: 0,
-      noDraft: 1,
+      queued: 1,
+      noDraft: 0,
     });
-    pasteClaude();
-    expect(app.call('admin.ai.queue', { essayIds: [essayId] }, admin)).toMatchObject({ queued: 1 });
     expect(app.svc.scheduled).toEqual(['aiJob']);
     expect(runAiJobs(app.svc)).toMatchObject({ done: 1, failed: 0, left: 0 });
     const item = app.call('admin.queue', {}, admin).items.find((i: any) => i.id === essayId);
