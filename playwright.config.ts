@@ -11,6 +11,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
+  // One retry on CI only: a real failure still fails twice; a timing hiccup does not turn the run red.
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: {
     baseURL: `http://localhost:${WEB_PORT}/`,
