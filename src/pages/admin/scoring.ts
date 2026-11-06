@@ -20,6 +20,7 @@ import {
 import { findExcerpt } from '../../../shared/excerpt';
 import { countWords } from '../../../shared/wordCount';
 import { api, ApiClientError } from '../../api';
+import { classroom, classroomEnabled } from '../../classroomApi';
 import { type Child, h, replace } from '../../dom';
 import { navigate, onLeave, type RouteContext, setUnsavedCheck } from '../../router';
 import {
@@ -867,6 +868,8 @@ function buildScoring(
       }
       dirty = false;
       requestId = newRequestId();
+      // Essays from Google Classroom: ask the class system to fetch the score now (not at the hourly run).
+      if (classroomEnabled()) void classroom('writing.scoresNow').catch(() => undefined);
       if (choice === 'next' && (await openNextEssay(essay.id, res.email, nextFilters))) return;
       showOutcome(res);
       setTimeout(reload, 1500);
