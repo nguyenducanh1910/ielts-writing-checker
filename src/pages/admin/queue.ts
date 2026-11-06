@@ -187,11 +187,17 @@ function aiBadge(item: QueueItem): Child {
   return [' ', b];
 }
 
-/** "Gemini chấm & đối chiếu": every waiting essay with a pasted Claude draft and no AI result yet. */
+/**
+ * "Gemini chấm": every waiting essay with no AI result yet. With a pasted Claude draft Gemini
+ * reconciles both; without one it writes its own draft for the form.
+ */
 function aiQueueButton(items: QueueItem[], reload: () => void): HTMLElement | null {
   const ready = items.filter(
-    (i) => i.queueStatus === 'claude_pasted' && (!i.ai || i.ai.status === 'failed'),
+    (i) =>
+      (i.queueStatus === 'claude_pasted' || i.queueStatus === 'new') &&
+      (!i.ai || i.ai.status === 'failed'),
   );
+  const withClaude = ready.filter((i) => i.queueStatus === 'claude_pasted').length;
   const busyNow = items.filter(
     (i) => i.ai && (i.ai.status === 'queued' || i.ai.status === 'running'),
   );
@@ -200,7 +206,8 @@ function aiQueueButton(items: QueueItem[], reload: () => void): HTMLElement | nu
   const btn = h(
     'button',
     { type: 'button', class: 'btn btn-primary', disabled: !ready.length },
-    `Gemini chấm & đối chiếu ${ready.length} bài đã dán Claude`,
+    `Gemini chấm ${ready.length} bài chờ` +
+      (withClaude ? ` (${withClaude} bài đối chiếu với Claude)` : ''),
   );
   btn.addEventListener('click', () =>
     busy(btn, 'Đang xếp hàng…', async () => {

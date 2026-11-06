@@ -893,30 +893,23 @@ function buildScoring(
       type: 'button',
       class: 'btn btn-primary',
       disabled: essay.status === 'scored',
-      title: 'Gemini chấm độc lập rồi đối chiếu với bản chấm của Claude đã dán',
+      title:
+        'Gemini chấm độc lập; nếu đã dán bản chấm của Claude thì đối chiếu hai bản, nếu chưa thì điền bản chấm nháp của Gemini',
     },
     'Bắt đầu chấm (Gemini)',
   );
   aiBtn.addEventListener('click', () => {
-    if (!lastDraft) {
-      replace(
-        aiStatus,
-        notice(
-          'warning',
-          'Dán bản chấm của Claude trước: “Copy for Claude” → Claude Project → “Paste Claude draft”.',
-        ),
-      );
-      return;
-    }
-    void busy(aiBtn, 'Gemini đang chấm & đối chiếu… (1–2 phút)', async () => {
+    void busy(aiBtn, 'Gemini đang chấm… (1–2 phút)', async () => {
       replace(aiStatus);
       try {
         const res = await api<AiScoreResult>('admin.ai.score', { essayId: essay.id });
         if (res.reconcileText) showReconcile(res.reconcileText, new Date().toISOString(), true);
-        await loadIntoForm(
-          res.reconciled ?? res.claudeDraft,
-          res.reconciled ? 'reconciled' : 'draft',
-        );
+        const filled = res.reconciled ?? res.claudeDraft ?? res.aiDraft;
+        if (filled)
+          await loadIntoForm(
+            filled,
+            res.reconciled ? 'reconciled' : res.claudeDraft ? 'draft' : 'ai',
+          );
         replace(
           aiStatus,
           notice(
@@ -926,7 +919,9 @@ function buildScoring(
               null,
               res.reconciled
                 ? `Đã điền kết quả đối chiếu Claude + Gemini (Gemini: band ${formatBand(res.gemini?.overall ?? null)}, dùng ${res.samples} bài mẫu). Xem ghi chú đối chiếu ở trên, sửa nếu cần rồi gửi.`
-                : 'Đã điền bản chấm của Claude (chưa đối chiếu được).',
+                : res.claudeDraft
+                  ? 'Đã điền bản chấm của Claude (chưa đối chiếu được).'
+                  : `Đã điền bản chấm nháp của Gemini (band ${formatBand(res.gemini?.overall ?? null)}, dùng ${res.samples} bài mẫu). Xem lại, sửa rồi gửi.`,
             ),
             ...res.warnings.map((w) => h('p', null, w)),
             h('p', { class: 'hint' }, 'Kết quả Gemini đầy đủ ở tab Gemini (tải lại trang để xem).'),
@@ -1027,8 +1022,13 @@ function buildScoring(
   );
 
   // ---------- Reference panel ----------
-  const loadIntoForm = async (draft: ClaudeDraft, kind: 'draft' | 'reconciled') => {
-    const what = kind === 'reconciled' ? 'Claude’s reconciled result' : 'Claude’s draft';
+  const loadIntoForm = async (draft: ClaudeDraft, kind: 'draft' | 'reconciled' | 'ai') => {
+    const what =
+      kind === 'reconciled'
+        ? 'Claude’s reconciled result'
+        : kind === 'ai'
+          ? 'the AI (Gemini) draft'
+          : 'Claude’s draft';
     if (state.errors.length || CRITERIA.some((c) => state.scores[c] !== null)) {
       const ok = await confirmDialog({
         title: `Replace the form with ${what}?`,
@@ -1150,6 +1150,22 @@ function buildScoring(
   );
 
   renderAll();
+  // An essay from Google Classroom that Gemini already drafted: open with the draft in the form.
+  const aiDraft = data.aiDraft?.parsed;
+  if (
+    aiDraft &&
+    !essay.score &&
+    essay.status !== 'scored' &&
+    !data.claudeDraft &&
+    !state.errors.length &&
+    CRITERIA.every((c) => state.scores[c] === null)
+  ) {
+    void loadIntoForm(aiDraft, 'ai').then(() => {
+      dirty = false; // nothing typed yet: leaving the page needs no warning
+      document.getElementById('form-heading')?.blur();
+      window.scrollTo(0, 0);
+    });
+  }
   const pageEl = page(
     `Score: ${data.student?.name ?? 'Student'} – ${essay.topic}`,
     h('p', null, link('/admin', '← Back to the queue')),

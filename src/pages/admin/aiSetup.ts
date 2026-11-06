@@ -25,6 +25,8 @@ export function aiSetupPage(): Node {
           max: '8',
           value: String(data.samplesPerPrompt),
         });
+        const autoDraft = h('input', { type: 'checkbox', name: 'autoDraft' });
+        autoDraft.checked = data.autoDraft;
         const rubric = h('textarea', { name: 'rubric', rows: '10', maxlength: '45000' });
         rubric.value = data.rubric;
         const status = h('div', { 'aria-live': 'polite' });
@@ -37,6 +39,7 @@ export function aiSetupPage(): Node {
                 ...(keyText ? { geminiKey: keyText } : {}),
                 geminiModel: model.value.trim(),
                 samplesPerPrompt: Number(samples.value),
+                autoDraft: autoDraft.checked,
                 rubric: rubric.value,
               });
               key.value = '';
@@ -78,6 +81,11 @@ export function aiSetupPage(): Node {
             h(
               'li',
               null,
+              'Bài Writing từ Google Classroom: nếu bật “Tự chấm nháp bài mới”, Gemini chấm ngay khi bài vào hàng chờ; thầy mở trang chấm là thấy điểm và lỗi đã điền sẵn. Chưa dán bản Claude cũng chấm được (Gemini chấm một mình).',
+            ),
+            h(
+              'li',
+              null,
               'Kết quả đối chiếu được điền sẵn vào form. Thầy duyệt, sửa rồi bấm gửi như bình thường — hệ thống không tự gửi cho học viên.',
             ),
             h(
@@ -112,6 +120,12 @@ export function aiSetupPage(): Node {
               hint: 'Mặc định gemini-flash-latest (miễn phí, giống hệ thống Lớp học). Có thể thử gemini-pro-latest nếu khoá còn lượt miễn phí cho Pro. Khi model quá tải hoặc hết lượt, hệ thống tự thử gemini-flash-lite-latest.',
             }),
             field({ label: 'Số bài mẫu mỗi lần chấm (0–8)', control: samples }),
+            h(
+              'label',
+              { class: 'checkbox' },
+              autoDraft,
+              ' Tự chấm nháp bài mới từ Google Classroom (Gemini chấm ngay khi bài vào hàng chờ)',
+            ),
             field({
               label: 'Band descriptors / tài liệu chấm (không bắt buộc)',
               control: rubric,

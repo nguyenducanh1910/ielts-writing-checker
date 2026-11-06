@@ -35,6 +35,8 @@ export interface AiJobView {
 
 export interface AiSettings {
   hasGeminiKey: boolean;
+  /** Essays from Google Classroom get a Gemini draft as soon as they arrive. */
+  autoDraft: boolean;
   geminiModel: string;
   rubric: string;
   samplesPerPrompt: number;
@@ -45,7 +47,9 @@ export interface AiSettings {
 
 export interface AiScoreResult {
   essayId: string;
-  claudeDraft: import('../../../shared/claude').ClaudeDraft;
+  /** Null when Gemini scored alone (no Claude draft): see aiDraft. */
+  claudeDraft: import('../../../shared/claude').ClaudeDraft | null;
+  aiDraft: import('../../../shared/claude').ClaudeDraft | null;
   reconciled: import('../../../shared/claude').ClaudeDraft | null;
   reconcileText: string;
   gemini: { scores: Record<string, number>; overall: number; model: string } | null;
@@ -104,6 +108,13 @@ export interface AdminEssayResponse {
     createdAt: string;
   } | null;
   reconcile: { id: string; rawText: string; createdAt: string } | null;
+  /** Gemini's own draft, made without a Claude draft (e.g. right after a Classroom import). */
+  aiDraft?: {
+    id: string;
+    rawText: string;
+    parsed: ClaudeDraft | null;
+    createdAt: string;
+  } | null;
   sourceFeedback: SourceFeedbackView[];
   sources: Array<{ id: string; name: string; active: boolean }>;
   calibration: SourceCalibration[];
