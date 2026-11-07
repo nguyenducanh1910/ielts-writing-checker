@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-07.1';
+const CLASSROOM_VERSION = '2026-11-07.2';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -2594,7 +2594,7 @@ function planRL_(plan, k, files) {
   const scale = teacherParas ? parseScale_(teacherParas) : [];
   const nExpl = Object.keys(info).filter(q => info[q].text && Number(q) <= parsed.total).length;
   if (teacherParas && nExpl < parsed.total) {
-    plan.warnings.push(name + ': có giải thích ' + nExpl + '/' + parsed.total + ' câu' + (nExpl ? '' : ' (không thấy mục "Giải thích chi tiết")'));
+    plan.warnings.push(name + ': có giải thích ' + nExpl + '/' + parsed.total + ' câu' + (nExpl ? '' : ' (không thấy mục "Giải thích chi tiết" hay "Phân tích từng phương án" trong bản giáo viên)'));
   }
 
   plan.rl.push({ k, name, total: parsed.total, groups: parsed.groups, questions: parsed.questions, key, info, scale });
@@ -3061,7 +3061,10 @@ function normalizeKeyText_(s) {
  */
 function parseExplanations_(paras) {
   const out = {};
-  const st = paras.findIndex(p => /^(\d+\.(\d+\.?)*\s*)?GIẢI THÍCH/i.test(String(p).trim()));
+  const head = re => paras.findIndex(p => re.test(String(p).normalize('NFC').trim()));
+  // Mục "Giải thích chi tiết"; nếu không có thì mục "Phân tích từng phương án / đáp án" (bản GV Listening)
+  let st = head(/^(\d+\.(\d+\.?)*\s*)?GIẢI THÍCH/i);
+  if (st < 0) st = head(/^(\d+\.(\d+\.?)*\s*)?PHÂN TÍCH\s+(TỪNG\s+|CÁC\s+|CHI TIẾT\s+)?(PHƯƠNG ÁN|ĐÁP ÁN|CÂU)/i);
   if (st < 0) return out;
   const LABEL = /^(Câu hỏi|B\d\s*[–—-].{1,30}|Bước\s*\d.{0,30}|Keywords?|Paraphrase|Vị trí|Dẫn chứng|Script|Transcript|Giải thích|Chốt đáp án|Bẫy.{0,30}|Lưu ý|Mẹo)$/i;
   let cur = null, label = null, grp = null;
