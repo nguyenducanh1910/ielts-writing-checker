@@ -3,6 +3,9 @@ import { backendVersion } from './scripts/backend-version.mjs';
 import { CLASSROOM_VERSION } from './src/versions';
 
 const BACKEND_VERSION = backendVersion();
+// When this build was made: written to version.json and sent with browser error reports, so the
+// class system's health check can ignore errors from older builds.
+const BUILT_AT = new Date().toISOString();
 
 // GitHub Pages cannot send security headers, so the production build carries a
 // Content-Security-Policy meta tag. Scripts only from this site; network calls
@@ -47,7 +50,7 @@ function versionFilePlugin(): Plugin {
           {
             backend: BACKEND_VERSION,
             classroom: CLASSROOM_VERSION,
-            builtAt: new Date().toISOString(),
+            builtAt: BUILT_AT,
           },
           null,
           2,
@@ -62,7 +65,10 @@ function versionFilePlugin(): Plugin {
 export default defineConfig({
   base: './',
   plugins: [cspPlugin(), versionFilePlugin()],
-  define: { __EXPECTED_BACKEND_VERSION__: JSON.stringify(BACKEND_VERSION) },
+  define: {
+    __EXPECTED_BACKEND_VERSION__: JSON.stringify(BACKEND_VERSION),
+    __SITE_BUILT_AT__: JSON.stringify(BUILT_AT),
+  },
   build: {
     outDir: 'dist',
     sourcemap: false,
