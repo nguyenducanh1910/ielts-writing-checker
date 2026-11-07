@@ -9,6 +9,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write # only to start a fresh run when GitHub Pages stays stuck (job "retry")
 
 concurrency:
   group: pages
@@ -36,7 +37,31 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.again.outputs.page_url }}
     steps:
+      # GitHub Pages sometimes leaves a deployment queued until it times out ("Deployment failed,
+      # try again later"). Give up after 5 minutes and try once more in the same run.
       - id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+        with:
+          timeout: 300000
+      - id: again
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 300000
+
+  # Still stuck: a brand-new run is what clears it, so start one (once; a run started this way
+  # is a workflow_dispatch and never retries again).
+  retry:
+    needs: deploy
+    if: failure() && needs.deploy.result == 'failure' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 60
+          gh workflow run deploy.yml --repo "${{ github.repository }}" --ref main
+          echo "::warning::GitHub Pages was stuck; started a new deploy run."
