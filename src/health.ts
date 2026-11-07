@@ -6,7 +6,12 @@ import { ApiClientError } from './api';
 import { classroom, classroomEnabled } from './classroomApi';
 import { type Child, h, replace } from './dom';
 import { getConfig } from './state';
-import { CLASSROOM_VERSION, EXPECTED_BACKEND_VERSION, versionMismatch } from './versions';
+import {
+  CLASSROOM_VERSION,
+  EXPECTED_BACKEND_VERSION,
+  SITE_BUILT_AT,
+  versionMismatch,
+} from './versions';
 
 const MAX_REPORTS = 5;
 let reported = 0;
@@ -24,6 +29,7 @@ export function reportClientError(err: unknown, where: string): void {
     where: where.slice(0, 60),
     path: location.hash.slice(0, 200),
     expected: EXPECTED_BACKEND_VERSION,
+    site: SITE_BUILT_AT,
   };
   classroom('client.error', detail).catch(() => undefined);
 }
