@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { runAiJobs } from '../../apps-script/src/aiScoring';
 import type { HttpRequest } from '../../apps-script/src/services';
 import {
+  adjustmentText,
   buildGeminiReconcilePrompt,
+  calibrateScores,
   geminiReconcileText,
   selectSamples,
 } from '../../shared/aiScoring';
@@ -170,6 +172,62 @@ describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
     expect(page.essay.status).not.toBe('scored'); // nothing sent to the student
   });
 
+  it("moves Gemini's own draft by its recorded bias, keeping the raw scores", () => {
+    const { app, admin, essayId } = prepare();
+    app.call('admin.ai.saveSettings', { geminiKey: KEY }, admin);
+    // 8 scored Task 2 essays where Gemini gave Grammar half a band more than the teacher.
+    const db = app.db();
+    const gem = db.findOne('FeedbackSources', (x) => x.name === 'Gemini')!;
+    for (let i = 0; i < 8; i++) {
+      const id = `past-${i}`;
+      db.insert('Essays', { id, status: 'scored', task_type: 'task2', scored_at: '2026-11-01' });
+      db.insert('Scores', {
+        essay_id: id,
+        criterion_1: 7,
+        criterion_2: 6.5,
+        criterion_3: 7,
+        criterion_4: 6,
+        overall: 6.5,
+      });
+      db.insert('SourceFeedback', {
+        id: `f-${i}`,
+        essay_id: id,
+        source_id: gem.id,
+        criterion_1: 7,
+        criterion_2: 6.5,
+        criterion_3: 7,
+        criterion_4: 6.5,
+      });
+    }
+    app.svc.cache.clear(); // sending a score clears the cached statistics; here rows are written directly
+    const settings = app.call('admin.ai.settings', {}, admin);
+    expect(settings.calibrate).toBe(true);
+    expect(settings.accuracy).toEqual([
+      expect.objectContaining({
+        taskType: 'task2',
+        samples: 8,
+        bias: expect.objectContaining({ task: 0, grammar: 0.5 }),
+      }),
+    ]);
+    // Gemini answers Grammar 6.5: the draft says 6.0, the stored Gemini result stays 6.5.
+    const solo = app.call('admin.ai.score', { essayId }, admin);
+    expect(solo.aiDraft.scores).toEqual({ task: 7, coherence: 6.5, lexical: 7, grammar: 6 });
+    expect(solo.aiDraft.calibration).toEqual([
+      { criterion: 'grammar', from: 6.5, to: 6, bias: 0.5 },
+    ]);
+    expect(solo.warnings.join(' ')).toContain('Grammatical Range and Accuracy 6.5 → 6.0');
+    expect(app.call('admin.essay', { id: essayId }, admin).aiDraft.parsed.scores.grammar).toBe(6);
+    const sf = app
+      .db()
+      .findOne('SourceFeedback', (x) => x.essay_id === essayId && x.source_id === gem.id);
+    expect(sf).toMatchObject({ criterion_4: '6.5' });
+    // Switched off: the draft is Gemini's own scores.
+    app.call('admin.ai.saveSettings', { calibrate: false }, admin);
+    const plain = app.call('admin.ai.score', { essayId }, admin);
+    expect(plain.aiDraft.scores.grammar).toBe(6.5);
+    expect(plain.aiDraft.calibration).toBeUndefined();
+  });
+
   it('falls back to the flash model when the chosen one is overloaded', () => {
     const { app, admin, essayId, pasteClaude } = prepare();
     app.call('admin.ai.saveSettings', { geminiKey: KEY }, admin);
@@ -215,6 +273,25 @@ describe('automatic scoring (free: pasted Claude draft + Gemini)', () => {
     app.call('admin.setSample', { essayId, sample: false }, admin);
     app.call('admin.saveScore', { ...score, requestId: 'r2' }, admin);
     expect(app.call('admin.essay', { id: essayId }, admin).isSample).toBe(false);
+  });
+});
+
+describe('Gemini bias adjustment', () => {
+  const scores = { task: 7, coherence: 6.5, lexical: 6, grammar: 6.5 };
+  it('needs enough essays and a clear bias, and rounds to half bands', () => {
+    expect(calibrateScores(scores, { samples: 7, bias: { grammar: 1 } }).changes).toEqual([]);
+    const r = calibrateScores(scores, {
+      samples: 12,
+      bias: { task: 0.2, coherence: -0.3, lexical: 0.26, grammar: 0.74, overall: 0.5 },
+    });
+    expect(r.scores).toEqual({ task: 7, coherence: 7, lexical: 5.5, grammar: 6 });
+    expect(r.changes.map((c) => c.criterion)).toEqual(['coherence', 'lexical', 'grammar']);
+    expect(
+      calibrateScores({ ...scores, task: 9 }, { samples: 9, bias: { task: -0.6 } }).scores.task,
+    ).toBe(9);
+    expect(adjustmentText({ criterion: 'coherence', from: 6.5, to: 7, bias: -0.3 }, 'task2')).toBe(
+      'Coherence and Cohesion 6.5 → 7.0 (Gemini thường thấp hơn thầy 0.30)',
+    );
   });
 });
 

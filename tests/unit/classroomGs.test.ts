@@ -285,6 +285,61 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(ex[2].text).toContain('Giải thích: next to the bank.');
   });
 
+  it("finds Teacher's Book sections under different headings", () => {
+    const gs = load();
+    const find = (kind: string, ...paras: string[]) => gs.tbSection_(paras, kind);
+    expect(find('expl', 'Intro', '3. GIẢI THÍCH CHI TIẾT')).toBe(1);
+    expect(find('expl', 'III. Lời giải chi tiết')).toBe(0);
+    expect(find('expl', 'Phần 4: Đáp án và giải thích')).toBe(0);
+    expect(find('expl', '2.3. Phân tích từng phương án')).toBe(0);
+    expect(find('expl', '4.Answer explanations')).toBe(0);
+    expect(find('expl', 'Phân tích', 'Đáp án đúng = phương án mà cả hai đồng ý')).toBe(-1);
+    // "Giải thích chi tiết" wins over "Phân tích từng phương án" wherever they are.
+    expect(find('expl', '2. Phân tích từng phương án', '3. Giải thích chi tiết')).toBe(1);
+    expect(find('diff', '2.5. Độ khó và độ phân hoá')).toBe(0);
+    expect(find('diff', '5. Mức độ khó')).toBe(0);
+    expect(find('scale', '2.6. Thang đánh giá và phân loại lỗi')).toBe(0);
+    expect(find('scale', '6. Thang điểm')).toBe(0);
+    // A long sentence that only mentions the word is not a heading.
+    expect(
+      find(
+        'expl',
+        'Giải thích chi tiết cho từng câu nằm ở cuối tài liệu này, giáo viên xem trước khi chữa bài.',
+      ),
+    ).toBe(-1);
+  });
+
+  it("lists which Teacher's Book sections were found", () => {
+    const gs = load();
+    const report = gs.teacherBookReport_(
+      'L Teacher.docx',
+      ['2.1. Đáp án', '2.3. Phân tích từng phương án', '2.6. Thang đánh giá'],
+      { 1: 'A' },
+    );
+    expect(report).toContain('đáp án ✓');
+    expect(report).toContain('giải thích ✓ ("2.3. Phân tích từng phương án")');
+    expect(report).toContain('độ khó ✗ (cần mục "Độ khó và độ phân hoá")');
+    expect(report).toContain('thang đánh giá ✓');
+  });
+
+  it('counts only browser errors from the web version that is live now', () => {
+    const gs = load();
+    const built = '2026-11-07T03:00:00.000Z';
+    const E = 'Lỗi trình duyệt';
+    const rows = [
+      [new Date('2026-11-06T08:05:00Z'), E, 'render #/essays/x: e.errors.map'], // before the fix, no tag
+      [new Date('2026-11-07T04:00:00Z'), E, 'render #/a: boom\nBản web: 2026-11-06T14:46:40.004Z'], // old tab
+      [new Date('2026-11-07T05:00:00Z'), E, 'render #/b: boom\nBản web: ' + built], // current
+      [new Date('2026-11-07T05:30:00Z'), E, 'render #/c: boom'], // after the release, no tag
+      [new Date('2026-11-07T05:40:00Z'), 'Chạy tự động', 'ok'],
+    ];
+    const r = gs.currentClientErrors_(rows, built);
+    expect(r.current.map((x: any[]) => x[2].split(':')[0])).toEqual(['render #/b', 'render #/c']);
+    expect(r.old).toBe(2);
+    // Without version.json every error counts.
+    expect(gs.currentClientErrors_(rows, undefined).current).toHaveLength(4);
+  });
+
   it('keeps the 8 newest backups of each kind', () => {
     const trashed: string[] = [];
     const file = (name: string, day: number) => ({
