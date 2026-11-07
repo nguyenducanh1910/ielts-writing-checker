@@ -11,11 +11,13 @@
 // under the lock at the end.
 import {
   addUsage,
+  adjustmentText,
   type AiImage,
   type AiReply,
   type AiUsage,
   buildGeminiReconcilePrompt,
   buildSystemPrompt,
+  calibrateScores,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_SAMPLES_PER_PROMPT,
   draftAsText,
@@ -26,6 +28,7 @@ import {
   MAX_SAMPLES_PER_PROMPT,
   NO_USAGE,
   readGeminiResponse,
+  type ScoreAdjustment,
   selectSamples,
   type ToolBias,
 } from '../../shared/aiScoring';
@@ -36,7 +39,13 @@ import {
   parseClaudeReply,
   parseReconcileReply,
 } from '../../shared/claude';
-import { CRITERIA, diagramTypeLabel, essayTypeLabel, type TaskType } from '../../shared/constants';
+import {
+  CRITERIA,
+  diagramTypeLabel,
+  essayTypeLabel,
+  TASK_TYPE_LABELS,
+  type TaskType,
+} from '../../shared/constants';
 import { countWords } from '../../shared/wordCount';
 import { activeSampleIds, calibrationFor } from './calibration';
 import { ApiError, createCtx, type Ctx, type EssayRow, num, parseJson } from './context';
@@ -81,6 +90,8 @@ export function aiConfig(ctx: Ctx) {
     hasGeminiKey: Boolean(ctx.svc.props.GEMINI_API_KEY),
     /** Essays from Google Classroom get a Gemini draft as soon as they arrive. */
     autoDraft: setting(ctx, 'ai_auto_draft', 'on') !== 'off',
+    /** Move Gemini's own draft by its recorded bias against the teacher's final scores. */
+    calibrate: setting(ctx, 'ai_calibrate', 'on') !== 'off',
   };
 }
 
@@ -221,8 +232,8 @@ export interface AiScoreResult {
   essayId: string;
   /** Null when Gemini scored alone (no Claude draft pasted): see aiDraft. */
   claudeDraft: ClaudeDraft | null;
-  /** Gemini's own draft when there was no Claude draft to reconcile with. */
-  aiDraft: ClaudeDraft | null;
+  /** Gemini's own draft when there was no Claude draft to reconcile with (bias-adjusted). */
+  aiDraft: (ClaudeDraft & { calibration?: ScoreAdjustment[] }) | null;
   reconciled: ClaudeDraft | null;
   reconcileText: string;
   gemini: { scores: Record<string, number>; overall: number; model: string } | null;
@@ -317,6 +328,28 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
   }
   const geminiDraft = parsed.value;
   const geminiRaw = reply.text;
+  // Gemini alone: move its scores by the bias recorded for this task type (the raw scores are
+  // what SourceFeedback keeps). With a Claude draft the reconcile prompt handles bias instead.
+  const cal =
+    !claude && cfg.calibrate
+      ? calibrateScores(geminiDraft.scores, p.geminiBias)
+      : { scores: geminiDraft.scores, changes: [] as ScoreAdjustment[] };
+  if (cal.changes.length) {
+    warnings.push(
+      `Đã chỉnh điểm nháp theo độ lệch của Gemini so với thầy (${p.geminiBias.samples} bài): ` +
+        cal.changes.map((a) => adjustmentText(a, p.taskType)).join('; '),
+    );
+  }
+  const aiDraft: (ClaudeDraft & { calibration?: ScoreAdjustment[] }) | null = claude
+    ? null
+    : cal.changes.length
+      ? {
+          ...geminiDraft,
+          scores: cal.scores,
+          overall: overallBand(CRITERIA.map((c) => cal.scores[c])),
+          calibration: cal.changes,
+        }
+      : geminiDraft;
 
   // 2: Gemini reconciles both (same conversation: it sees the essay and its own answer).
   let reconciled: ClaudeDraft | null = null;
@@ -395,13 +428,13 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
           ...fields,
         });
     }
-    if (!claude) {
+    if (aiDraft) {
       ctx.db.insert('Drafts', {
         id: ctx.svc.uuid(),
         essay_id: essayId,
         kind: 'ai',
         raw_text: clip(geminiRaw),
-        parsed_json: JSON.stringify(geminiDraft),
+        parsed_json: JSON.stringify(aiDraft),
         created_at: ctx.nowIso,
       });
     }
@@ -440,7 +473,7 @@ export function scoreEssayWithAi(svc: Services, essayId: string, jobId = ''): Ai
   return {
     essayId,
     claudeDraft: claude ? claude.draft : null,
-    aiDraft: claude ? null : geminiDraft,
+    aiDraft,
     reconciled,
     reconcileText,
     gemini: { scores: { ...geminiDraft.scores }, overall: geminiDraft.overall, model },
@@ -616,10 +649,33 @@ function settingsView(ctx: Ctx) {
     rubric: cfg.rubric,
     samplesPerPrompt: cfg.samplesPerPrompt,
     autoDraft: cfg.autoDraft,
+    calibrate: cfg.calibrate,
+    accuracy: geminiAccuracy(ctx),
     sampleCount: activeSampleIds(ctx).size,
     jobsReady: jobsReady(ctx.svc),
     jobs: counts,
   };
+}
+
+/**
+ * How far Gemini's own scores have been from the teacher's final scores, per task type (the
+ * numbers the draft adjustment uses). Only task types with at least one scored essay.
+ */
+function geminiAccuracy(ctx: Ctx) {
+  const src = sourceByName(ctx, 'gemini');
+  if (!src) return [];
+  return (Object.keys(TASK_TYPE_LABELS) as TaskType[])
+    .map((taskType) => {
+      const c = calibrationFor(ctx, taskType).find((x) => x.sourceId === src.id);
+      return {
+        taskType,
+        label: TASK_TYPE_LABELS[taskType],
+        samples: c?.samples ?? 0,
+        bias: c?.bias ?? {},
+        within: c?.within ?? {},
+      };
+    })
+    .filter((a) => a.samples > 0);
 }
 
 const MODEL_RE = /^[a-z0-9][a-z0-9.\-_]{2,60}$/;
@@ -649,6 +705,7 @@ function saveSettings(ctx: Ctx, payload: unknown) {
   if (r.has('geminiModel')) putSetting(ctx, 'ai_gemini_model', geminiModel);
   if (r.has('rubric')) putSetting(ctx, 'ai_rubric', rubric);
   if (r.has('autoDraft')) putSetting(ctx, 'ai_auto_draft', r.bool('autoDraft') ? 'on' : 'off');
+  if (r.has('calibrate')) putSetting(ctx, 'ai_calibrate', r.bool('calibrate') ? 'on' : 'off');
   if (samples !== null && samples !== undefined) putSetting(ctx, 'ai_samples', String(samples));
   return settingsView(ctx);
 }
