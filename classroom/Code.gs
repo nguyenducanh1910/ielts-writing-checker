@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-07.3';
+const CLASSROOM_VERSION = '2026-11-07.4';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -3044,11 +3044,14 @@ function acceptCell_(s) {
     .map(x => x.replace(/[“”"]/g, '').trim()).filter(x => x && x.length <= 60 && !/^(không|phải|cả hai|both)/i.test(x));
 }
 
-/** "Hartley (chấp nhận: HARTLEY)" -> "Hartley|HARTLEY"; "two hours / 2 hours" -> "two hours|2 hours" */
+/** "Hartley (chấp nhận: HARTLEY)" -> "Hartley|HARTLEY"; "two hours / 2 hours" -> "two hours|2 hours"; "B (climate change)" -> "B" */
 function normalizeKeyText_(s) {
   let main = String(s).trim(), extra = [];
   const m = main.match(/^(.*?)\s*\((?:chấp nhận|accept(?:ed)?|also)\s*:?\s*([^)]*)\)\s*$/i);
   if (m) { main = m[1]; extra = m[2].split(/\s+\/\s+|\s*;\s*|\s*\|\s*/); }
+  // "B (climate change)" / "iv (Paragraph C)": chữ cái hoặc số La Mã kèm chú thích cho GV -> chỉ lấy chữ cái
+  const gloss = main.match(/^([A-L]|[ivx]{1,4})\s*\([^)]*\)\s*$/);
+  if (gloss) main = gloss[1];
   const alts = main.split(/\s+\/\s+|\s*\|\s*/).concat(extra).map(x => x.trim()).filter(String);
   return alts.filter((x, i) => alts.indexOf(x) === i).join('|');
 }
