@@ -234,6 +234,50 @@ export interface ToolBias {
   samples: number;
 }
 
+/** Adjust Gemini's own draft only when enough essays show a clear, steady difference. */
+export const CALIBRATE_MIN_SAMPLES = 8;
+export const CALIBRATE_MIN_BIAS = 0.25;
+
+export interface ScoreAdjustment {
+  criterion: (typeof CRITERIA)[number];
+  from: number;
+  to: number;
+  /** Average of (Gemini − teacher) over the recorded essays. */
+  bias: number;
+}
+
+/**
+ * Gemini's scores moved by its recorded bias against the teacher's final scores, rounded to the
+ * nearest half band. Criteria with too few essays or a small bias are left as they are. The raw
+ * scores stay in SourceFeedback, so the bias keeps being measured on Gemini's own judgement.
+ */
+export function calibrateScores(
+  scores: Record<(typeof CRITERIA)[number], number>,
+  b: ToolBias,
+): { scores: Record<(typeof CRITERIA)[number], number>; changes: ScoreAdjustment[] } {
+  const out = { ...scores };
+  const changes: ScoreAdjustment[] = [];
+  if (b.samples < CALIBRATE_MIN_SAMPLES) return { scores: out, changes };
+  for (const c of CRITERIA) {
+    const bias = b.bias[c];
+    if (typeof bias !== 'number' || Number.isNaN(bias) || Math.abs(bias) < CALIBRATE_MIN_BIAS)
+      continue;
+    const from = scores[c];
+    const to = Math.min(9, Math.max(0, Math.round((from - bias) * 2) / 2));
+    if (to !== from) {
+      out[c] = to;
+      changes.push({ criterion: c, from, to, bias });
+    }
+  }
+  return { scores: out, changes };
+}
+
+/** "Grammatical Range and Accuracy 7.0 → 6.5 (Gemini thường cao hơn thầy 0.42)" */
+export function adjustmentText(a: ScoreAdjustment, taskType: TaskType): string {
+  const way = a.bias > 0 ? 'cao hơn' : 'thấp hơn';
+  return `${criterionLabel(a.criterion, taskType)} ${formatBand(a.from)} → ${formatBand(a.to)} (Gemini thường ${way} thầy ${Math.abs(a.bias).toFixed(2)})`;
+}
+
 function biasLine(name: string, b: ToolBias): string {
   if (!b.samples) return `${name}: no bias recorded yet.`;
   const f = (n: number | null | undefined) =>
