@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-07.2';
+const CLASSROOM_VERSION = '2026-11-07.3';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -2596,6 +2596,7 @@ function planRL_(plan, k, files) {
   if (teacherParas && nExpl < parsed.total) {
     plan.warnings.push(name + ': có giải thích ' + nExpl + '/' + parsed.total + ' câu' + (nExpl ? '' : ' (không thấy mục "Giải thích chi tiết" hay "Phân tích từng phương án" trong bản giáo viên)'));
   }
+  if (teacherParas) plan.summaryParts.push(name + ': ' + teacherBookReport_(teacher[0].name, teacherParas, parseKeyTable_(teacherParas)));
 
   plan.rl.push({ k, name, total: parsed.total, groups: parsed.groups, questions: parsed.questions, key, info, scale });
   plan.components.push(k === 'R' ? 'Reading (Academic)' : 'Listening');
@@ -3053,6 +3054,43 @@ function normalizeKeyText_(s) {
 }
 
 /**
+ * Tìm tiêu đề một mục của Teacher's Book. Chấp nhận nhiều cách đặt tên (đánh số "2.3.", "III.",
+ * "Phần 3:" hoặc không đánh số); tiêu đề là một dòng ngắn. Mỗi loại thử lần lượt từng mẫu, mẫu
+ * đầu được ưu tiên (VD có cả "Giải thích chi tiết" và "Phân tích từng phương án" thì lấy mục đầu).
+ * Trả về vị trí dòng tiêu đề, -1 nếu không có.
+ */
+const TB_SECTIONS = {
+  expl: [
+    /^(GIẢI THÍCH|LỜI GIẢI|CHỮA (BÀI )?CHI TIẾT|(ĐÁP ÁN\s*(VÀ|&|\+)\s*)GIẢI THÍCH|(ANSWER|DETAILED)\s+EXPLANATIONS?)/i,
+    /^PHÂN TÍCH\s+(TỪNG\s+|CÁC\s+|CHI TIẾT\s+)?(PHƯƠNG ÁN|ĐÁP ÁN|CÂU|LỰA CHỌN)|^(ANSWER|OPTION)\s+ANALYSIS/i,
+  ],
+  diff: [/^(ĐỘ KHÓ|MỨC ĐỘ KHÓ|PHÂN TÍCH ĐỘ KHÓ|DIFFICULTY)/i],
+  scale: [/^(THANG ĐÁNH GIÁ|THANG ĐIỂM|THANG PHÂN LOẠI|PHÂN LOẠI (HỌC SINH|HỌC VIÊN|KẾT QUẢ)|(SCORE|MARKING|BAND)\s+(SCALE|BANDS?))/i],
+};
+const TB_NUM = /^(?:(?:Phần|Mục|Part|Section)\s+)?(?:(?:\d+|[IVX]{1,4})(?:\.\d+)*[.):]?\s+|(?:\d+\.)+\d*\s*)?/i;
+function tbSection_(paras, kind) {
+  const P = paras.map(p => String(p).normalize('NFC').replace(/\s+/g, ' ').trim());
+  const heads = P.map(p => (p.length <= 90 ? p.replace(TB_NUM, '') : ''));
+  for (const re of TB_SECTIONS[kind]) {
+    const i = heads.findIndex(h => h && re.test(h));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+/** Bản GV có những mục nào: "bản GV "X": đáp án ✓ · giải thích ✓ ("2.3. Phân tích…") · độ khó ✗ (cần mục "Độ khó…") …" */
+function teacherBookReport_(fileName, paras, key) {
+  const P = paras.map(p => String(p).replace(/\s+/g, ' ').trim());
+  const item = (label, i, need) => label + (i >= 0 ? ' ✓ ("' + P[i].slice(0, 50) + '")' : ' ✗ (cần mục ' + need + ')');
+  return 'bản GV "' + fileName + '": ' + [
+    'đáp án ' + (Object.keys(key || {}).length ? '✓' : '✗ (dùng đáp án cuối file đề)'),
+    item('giải thích', tbSection_(paras, 'expl'), '"Giải thích chi tiết" hoặc "Phân tích từng phương án"'),
+    item('độ khó', tbSection_(paras, 'diff'), '"Độ khó và độ phân hoá"'),
+    item('thang đánh giá', tbSection_(paras, 'scale'), '"Thang đánh giá"'),
+  ].join(' · ');
+}
+
+/**
  * Đọc mục "Giải thích chi tiết" của Teacher's Book. Hỗ trợ 2 kiểu:
  *  - Bảng theo 4 bước: "Câu 1 → D | Mức độ: Dễ • p ≈ 0.70 • D ≈ 0.30 • Lỗi dự kiến: …" rồi các dòng
  *    "Câu hỏi" / "B2 – Keywords" / "B3 – Vị trí" / "Paraphrase" / "B4 – Chốt đáp án" / "Bẫy / lỗi hay gặp"
@@ -3061,10 +3099,8 @@ function normalizeKeyText_(s) {
  */
 function parseExplanations_(paras) {
   const out = {};
-  const head = re => paras.findIndex(p => re.test(String(p).normalize('NFC').trim()));
   // Mục "Giải thích chi tiết"; nếu không có thì mục "Phân tích từng phương án / đáp án" (bản GV Listening)
-  let st = head(/^(\d+\.(\d+\.?)*\s*)?GIẢI THÍCH/i);
-  if (st < 0) st = head(/^(\d+\.(\d+\.?)*\s*)?PHÂN TÍCH\s+(TỪNG\s+|CÁC\s+|CHI TIẾT\s+)?(PHƯƠNG ÁN|ĐÁP ÁN|CÂU)/i);
+  const st = tbSection_(paras, 'expl');
   if (st < 0) return out;
   const LABEL = /^(Câu hỏi|B\d\s*[–—-].{1,30}|Bước\s*\d.{0,30}|Keywords?|Paraphrase|Vị trí|Dẫn chứng|Script|Transcript|Giải thích|Chốt đáp án|Bẫy.{0,30}|Lưu ý|Mẹo)$/i;
   let cur = null, label = null, grp = null;
@@ -3135,7 +3171,7 @@ function parseExplanations_(paras) {
 /** Bảng "Độ khó và độ phân hoá": Câu | Đáp án | Mức độ | p | D | Phân hoá | Lỗi dự kiến -> { câu: {level, p, d, err} } */
 function parseDifficulty_(paras) {
   const P = paras.map(x => String(x).replace(/\s+/g, ' ').trim()).filter(String);
-  const st = P.findIndex(p => /^(\d+\.(\d+\.?)*\s*)?Độ khó/i.test(p));
+  const st = tbSection_(P, 'diff');
   if (st < 0) return {};
   let i = st + 1;
   while (i < P.length && !/^(Câu|Question|Q)$/i.test(P[i]) && i < st + 6) i++;
@@ -3160,7 +3196,7 @@ function parseDifficulty_(paras) {
 
 /** Mục "Thang đánh giá" (VD 11 – 13: Vững …) -> [[từ, đến, mức, gợi ý cho GV], …] */
 function parseScale_(paras) {
-  const st = paras.findIndex(p => /^(\d+\.(\d+\.?)*\s*)?Thang đánh giá/i.test(String(p).trim()));
+  const st = tbSection_(paras, 'scale');
   if (st < 0) return [];
   const out = [];
   for (let i = st + 1; i < paras.length; i++) {
@@ -4903,7 +4939,9 @@ function healthCheck_() {
       const since = Date.now() - 86400e3;
       const rows = sh.getRange(Math.max(2, last - 499), 1, Math.min(500, last - 1), 3).getValues()
         .filter(r => r[0] instanceof Date && r[0].getTime() >= since);
-      const client = rows.filter(r => r[1] === LOG_CLIENT_ERROR), portal = rows.filter(r => r[1] === LOG_PORTAL_ERROR);
+      const ce = currentClientErrors_(rows, expected && expected.builtAt);
+      const client = ce.current, portal = rows.filter(r => r[1] === LOG_PORTAL_ERROR);
+      if (ce.old) notes.push(ce.old + ' lỗi trang web trong 24 giờ qua thuộc bản web cũ (đã có bản mới) nên không tính.');
       if (client.length) problems.push(client.length + ' lỗi hiển thị trên trang web trong 24 giờ qua (sheet Nhật ký, dòng "' + LOG_CLIENT_ERROR + '"). Gần nhất: ' + String(client[client.length - 1][2]).split('\n')[0].slice(0, 200));
       if (portal.length) problems.push(portal.length + ' lỗi máy chủ Lớp học trong 24 giờ qua (sheet Nhật ký, dòng "' + LOG_PORTAL_ERROR + '"). Gần nhất: ' + String(portal[portal.length - 1][2]).split('\n')[0].slice(0, 200));
     }
@@ -5181,10 +5219,32 @@ function portalClientError_(p) {
   if (n >= 30) return { logged: false };
   cache.put(k, String(n + 1), 3600);
   const s = v => String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u0008\u000b-\u001f]/g, ' ');
-  log_(LOG_CLIENT_ERROR, (s(p.where).slice(0, 60) + ' ' + s(p.path).slice(0, 200) + ': ' + s(p.message).slice(0, 300) + '\n' + s(p.stack).slice(0, 1500)).trim());
+  log_(LOG_CLIENT_ERROR, (s(p.where).slice(0, 60) + ' ' + s(p.path).slice(0, 200) + ': ' + s(p.message).slice(0, 300) + '\n' + s(p.stack).slice(0, 1500)).trim() +
+    (p.site ? '\n' + CLIENT_BUILD_TAG + s(p.site).slice(0, 40) : ''));
   return { logged: true };
 }
 const LOG_CLIENT_ERROR = 'Lỗi trình duyệt';
+const CLIENT_BUILD_TAG = 'Bản web: ';
+
+/**
+ * Lỗi trình duyệt nào còn đáng báo: chỉ lỗi của bản web đang chạy (builtAt trong version.json).
+ * Lỗi ghi kèm bản web cũ, hoặc không ghi bản web mà xảy ra trước khi bản hiện tại lên, đã được
+ * sửa bằng bản mới (hoặc HS đang mở trang cũ, tải lại là hết) nên chỉ đếm riêng để ghi chú.
+ * rows: [[thời gian (Date), sự kiện, chi tiết], …] -> { current: [...], old: số lỗi bỏ qua }
+ */
+function currentClientErrors_(rows, builtAt) {
+  const built = builtAt ? new Date(builtAt).getTime() : NaN;
+  const current = [];
+  let old = 0;
+  rows.forEach(r => {
+    if (r[1] !== LOG_CLIENT_ERROR) return;
+    if (isNaN(built)) { current.push(r); return; }
+    const m = String(r[2]).match(new RegExp(CLIENT_BUILD_TAG + '(\\S+)'));
+    const isCurrent = m ? m[1] === builtAt : r[0].getTime() >= built;
+    if (isCurrent) current.push(r); else old++;
+  });
+  return { current, old };
+}
 const LOG_PORTAL_ERROR = 'Lỗi web portal';
 
 /** Xử lý 1 yêu cầu từ web. Tách riêng khỏi doPost để kiểm thử được. */
