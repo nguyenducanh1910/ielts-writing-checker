@@ -1,4 +1,5 @@
 // Admin scoring page: essay panel | reference panel (Claude + external tools) | score form.
+import { adjustmentText } from '../../../shared/aiScoring';
 import { overallBand } from '../../../shared/band';
 import {
   buildClaudePrompt,
@@ -1162,6 +1163,21 @@ function buildScoring(
   ) {
     void loadIntoForm(aiDraft, 'ai').then(() => {
       dirty = false; // nothing typed yet: leaving the page needs no warning
+      if (aiDraft.calibration?.length) {
+        replace(
+          aiStatus,
+          notice(
+            'info',
+            h(
+              'p',
+              null,
+              'Điểm nháp đã chỉnh theo độ lệch thường gặp của Gemini so với thầy: ' +
+                aiDraft.calibration.map((a) => adjustmentText(a, essay.taskType)).join('; ') +
+                '.',
+            ),
+          ),
+        );
+      }
       document.getElementById('form-heading')?.blur();
       window.scrollTo(0, 0);
     });

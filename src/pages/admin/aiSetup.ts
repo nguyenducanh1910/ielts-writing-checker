@@ -1,5 +1,7 @@
 // Chấm tự động (miễn phí): khoá Gemini API, model, số bài mẫu mỗi lần chấm, band descriptors.
 // Claude vẫn chấm bản đầu qua Claude.ai Project (chép–dán); Gemini chấm độc lập và đối chiếu.
+import { CALIBRATE_MIN_BIAS, CALIBRATE_MIN_SAMPLES } from '../../../shared/aiScoring';
+import { CRITERIA, criterionLabel, type TaskType } from '../../../shared/constants';
 import { api, ApiClientError } from '../../api';
 import { h, replace } from '../../dom';
 import { async, busy, errorBox, field, link, notice, page } from '../../ui/components';
@@ -27,6 +29,8 @@ export function aiSetupPage(): Node {
         });
         const autoDraft = h('input', { type: 'checkbox', name: 'autoDraft' });
         autoDraft.checked = data.autoDraft;
+        const calibrate = h('input', { type: 'checkbox', name: 'calibrate' });
+        calibrate.checked = data.calibrate;
         const rubric = h('textarea', { name: 'rubric', rows: '10', maxlength: '45000' });
         rubric.value = data.rubric;
         const status = h('div', { 'aria-live': 'polite' });
@@ -40,6 +44,7 @@ export function aiSetupPage(): Node {
                 geminiModel: model.value.trim(),
                 samplesPerPrompt: Number(samples.value),
                 autoDraft: autoDraft.checked,
+                calibrate: calibrate.checked,
                 rubric: rubric.value,
               });
               key.value = '';
@@ -126,6 +131,12 @@ export function aiSetupPage(): Node {
               autoDraft,
               ' Tự chấm nháp bài mới từ Google Classroom (Gemini chấm ngay khi bài vào hàng chờ)',
             ),
+            h(
+              'label',
+              { class: 'checkbox' },
+              calibrate,
+              ` Tự chỉnh điểm nháp theo độ lệch của Gemini so với thầy (từ ${CALIBRATE_MIN_SAMPLES} bài trở lên, tiêu chí lệch từ ${CALIBRATE_MIN_BIAS} band)`,
+            ),
             field({
               label: 'Band descriptors / tài liệu chấm (không bắt buộc)',
               control: rubric,
@@ -134,6 +145,7 @@ export function aiSetupPage(): Node {
             h('div', { class: 'actions' }, save, test),
             status,
           ),
+          accuracySection(data),
           h(
             'p',
             null,
@@ -143,6 +155,90 @@ export function aiSetupPage(): Node {
       },
       'Đang tải…',
     ),
+  );
+}
+
+const signed2 = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(2)}`;
+
+/**
+ * "Gemini lệch bao nhiêu so với thầy": per task type and criterion, the average of
+ * (Gemini's own score − the teacher's final score), how often it was within half a band, and
+ * whether the draft is adjusted for it.
+ */
+export function accuracySection(data: AiSettings): HTMLElement {
+  const intro = h(
+    'p',
+    null,
+    'Lệch = điểm Gemini tự chấm − điểm thầy gửi cho học viên. +0.40 nghĩa là Gemini thường chấm cao hơn thầy 0.4 band. ' +
+      `Tính trên các bài đã gửi điểm có điểm Gemini; từ ${CALIBRATE_MIN_SAMPLES} bài, tiêu chí lệch từ ${CALIBRATE_MIN_BIAS} band được tự chỉnh khi Gemini chấm nháp một mình.`,
+  );
+  const body = data.accuracy.length
+    ? data.accuracy.map((a) => {
+        const enough = a.samples >= CALIBRATE_MIN_SAMPLES;
+        return h(
+          'div',
+          { class: 'table-wrap' },
+          h(
+            'table',
+            null,
+            h('caption', null, `${a.label} — ${a.samples} bài`),
+            h(
+              'thead',
+              null,
+              h(
+                'tr',
+                null,
+                h('th', { scope: 'col' }, 'Tiêu chí'),
+                h('th', { scope: 'col' }, 'Lệch trung bình'),
+                h('th', { scope: 'col' }, 'Trong ±0.5 band'),
+                h('th', { scope: 'col' }, 'Điểm nháp'),
+              ),
+            ),
+            h(
+              'tbody',
+              null,
+              ...CRITERIA.map((c) => {
+                const b = a.bias[c];
+                const w = a.within[c];
+                const adjust =
+                  data.calibrate &&
+                  enough &&
+                  typeof b === 'number' &&
+                  Math.abs(b) >= CALIBRATE_MIN_BIAS;
+                return h(
+                  'tr',
+                  null,
+                  h('th', { scope: 'row' }, criterionLabel(c, a.taskType as TaskType)),
+                  h('td', null, typeof b === 'number' ? signed2(b) : '–'),
+                  h('td', null, typeof w === 'number' ? `${Math.round(w * 100)}%` : '–'),
+                  h(
+                    'td',
+                    null,
+                    adjust
+                      ? `tự chỉnh ${signed2(-(b as number))}`
+                      : enough
+                        ? 'giữ nguyên'
+                        : `chưa đủ ${CALIBRATE_MIN_SAMPLES} bài`,
+                  ),
+                );
+              }),
+            ),
+          ),
+        );
+      })
+    : [
+        h(
+          'p',
+          null,
+          'Chưa có bài nào vừa có điểm Gemini vừa đã gửi điểm cho học viên. Số liệu sẽ hiện sau khi thầy gửi điểm những bài Gemini đã chấm nháp.',
+        ),
+      ];
+  return h(
+    'section',
+    { class: 'card', 'aria-labelledby': 'accuracy-heading' },
+    h('h2', { id: 'accuracy-heading' }, 'Gemini lệch bao nhiêu so với thầy'),
+    intro,
+    ...body,
   );
 }
 
