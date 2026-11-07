@@ -209,6 +209,82 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(synced).toBe(false);
   });
 
+  it('reads the per-option analysis of a Listening teacher file (no "Giải thích" heading)', () => {
+    const gs = load();
+    // Paragraphs as read from "L Teacher.docx" (L21): every table cell is its own paragraph.
+    const row = (...cells: string[]) => cells;
+    const paras = [
+      '2. LISTENING',
+      '2.1. Đáp án',
+      ...row('Câu', 'Đáp án', 'Mức độ', 'Ghi chú'),
+      ...row('1', 'A', 'Dễ', 'Câu 1–2: A, C – theo thứ tự bất kỳ'),
+      '2.2. Transcript',
+      ...row('— Questions 1 and 2 —'),
+      ...row('TOM', 'In the city, rent is so high (A).'),
+      '2.3. Phân tích từng phương án',
+      'Đáp án đúng = phương án mà CẢ HAI người cùng đồng ý (handout L21).',
+      'Questions 1–2: Which TWO reasons for moving to the countryside do both students think are the most important? → A, C',
+      ...row('Phương án', 'KQ', 'Phân tích', 'Signpost'),
+      ...row(
+        'A',
+        'lower housing costs',
+        '✓',
+        'Tom: “rent is so high” – Hannah: “I agree with that”.',
+        'I agree with that',
+      ),
+      ...row(
+        'B',
+        'a healthier environment',
+        '✗',
+        'Hannah: “I’m not really convinced”.',
+        'I’m not really convinced',
+      ),
+      'Questions 3–4: Which TWO problems of rural life do the students agree to mention? → B, D',
+      ...row('Phương án', 'KQ', 'Phân tích', 'Signpost'),
+      ...row(
+        'B',
+        'poor public transport',
+        '✓',
+        'Tom: “only two or three buses a day”.',
+        'Yes, I agree',
+      ),
+      ...row(
+        'D',
+        'a lack of job opportunities',
+        '✓',
+        'Tom đổi ý: “But actually, you’re right”.',
+        'But actually…',
+      ),
+      '2.4. Cụm Agree / Disagree của handout L21 xuất hiện trong bài',
+      ...row('Loại', 'Cụm từ xuất hiện trong audio'),
+      '2.5. Độ khó và độ phân hoá',
+      ...row('Câu', 'Đáp án', 'Mức độ', 'p', 'D', 'Phân hoá', 'Lỗi dự kiến'),
+      ...row('1', 'A', 'Dễ', '0.70', '0.30', 'Tốt', 'Không nhận ra paraphrase'),
+      ...row('2', 'C', 'Trung bình', '0.58', '0.40', 'Rất tốt', 'Không nhận ra paraphrase'),
+    ];
+    const ex = gs.parseExplanations_(paras);
+    expect(Object.keys(ex).sort()).toEqual(['1', '2', '3', '4']);
+    expect(ex[1].text).toContain('Cặp câu 1–2: đáp án A, C (thứ tự bất kỳ)');
+    expect(ex[1].text).toContain('A. lower housing costs ✓ — Tom: “rent is so high”');
+    expect(ex[2].text).toContain('B. a healthier environment ✗');
+    expect(ex[4].text).toContain('D. a lack of job opportunities ✓');
+    expect(ex[4].text).not.toContain('Cụm từ xuất hiện'); // stops at the next numbered section
+    expect(ex[1]).toMatchObject({ level: 'Dễ', p: '0.70', d: '0.30' });
+  });
+
+  it('still prefers a "Giải thích chi tiết" section when there is one', () => {
+    const gs = load();
+    const ex = gs.parseExplanations_([
+      '3. Phân tích từng phương án',
+      'Câu 1. Ignored question',
+      '4. GIẢI THÍCH CHI TIẾT',
+      'Câu 2. Where is the library?',
+      'Giải thích: next to the bank.',
+    ]);
+    expect(Object.keys(ex)).toEqual(['2']);
+    expect(ex[2].text).toContain('Giải thích: next to the bank.');
+  });
+
   it('keeps the 8 newest backups of each kind', () => {
     const trashed: string[] = [];
     const file = (name: string, day: number) => ({
