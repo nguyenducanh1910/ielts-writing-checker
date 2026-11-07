@@ -340,6 +340,17 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(gs.currentClientErrors_(rows, undefined).current).toHaveLength(4);
   });
 
+  it('takes only the letter from answers like "B (climate change)"', () => {
+    const gs = load();
+    expect(gs.normalizeKeyText_('B (climate change)')).toBe('B');
+    expect(gs.normalizeKeyText_('iv (Paragraph C)')).toBe('iv');
+    expect(gs.normalizeKeyText_('Hartley (chấp nhận: HARTLEY)')).toBe('Hartley|HARTLEY');
+    expect(gs.normalizeKeyText_('(the) river')).toBe('(the) river');
+    expect(gs.normalizeKeyText_('two hours / 2 hours')).toBe('two hours|2 hours');
+    expect(gs.normalizeKeyText_('week')).toBe('week');
+    expect(gs.matchAnswer_('B', gs.normalizeKeyText_('B (climate change)'))).toBe(true);
+  });
+
   it('keeps the 8 newest backups of each kind', () => {
     const trashed: string[] = [];
     const file = (name: string, day: number) => ({
