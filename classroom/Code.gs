@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-09.1';
+const CLASSROOM_VERSION = '2026-11-09.2';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -2157,7 +2157,7 @@ function sendToWritingSite_(r, cw, skill, cfg, webCtx) {
   const data = callWritingApi_(conn, 'portal.essays.import', payload);
   return {
     score: '', band: '',
-    summary: essay.usedAI ? 'Bài viết tay — AI đã chép lại thành văn bản, nên đối chiếu bản gốc khi chấm.' : '',
+    summary: essay.usedAI ? 'Bài viết tay — AI đã chép lại thành văn bản, nên đối chiếu bản gốc khi chấm.' : (essay.note || ''),
     docUrl: cfg.writingAppUrl + '#/admin/score/' + data.essayId,
     status: 'Đã gửi lên web — chờ chấm',
     stamp: true,
@@ -2199,6 +2199,9 @@ function writingEssay_(r, cw, skill, cfg, allowOcr) {
         sawMarkers = true;
         const ans = task === 1 ? w.task1Answer : w.task2Answer;
         if (ans && countWords_(ans) >= 20) return { text: ans };
+        // Phần dưới dòng mốc trống nhưng HS viết bài phía trên (ngay dưới đề)
+        const above = task === 1 ? w.task1Above : w.task2Above;
+        if (countWords_(above) >= 50) return { text: above, note: 'HS viết bài phía trên dòng "TASK ' + task + ' – Answer"' };
         continue;
       }
       texts.push(paras.join('\n'));
@@ -3240,12 +3243,24 @@ function parseWriting_(paras) {
   const slice = (s, e) => (s < 0 ? [] : paras.slice(s + 1, e < 0 ? undefined : e));
   const firstAns = [a1, a2].filter(x => x >= 0).sort((x, y) => x - y)[0];
   const end = (s, cands) => cands.filter(x => x > s).sort((x, y) => x - y)[0];
+  // Đề của 1 Task (từ "WRITING TASK n" tới Task sau / dòng mốc đầu tiên). Có HS viết bài ngay dưới dòng
+  // "Write at least … words" (phía trên dòng mốc): phần đó tách khỏi đề, trả về riêng (task*Above).
+  const region = (t, stop) => {
+    const all = slice(t, t < 0 ? -1 : (stop || -1));
+    const lastInstr = all.map(p => /^Write at least \d+ words/i.test(String(p).trim())).lastIndexOf(true);
+    return lastInstr < 0
+      ? { prompt: clean(all).join('\n').trim(), above: '' }
+      : { prompt: clean(all.slice(0, lastInstr + 1)).join('\n').trim(), above: clean(all.slice(lastInstr + 1)).join('\n').trim() };
+  };
+  const r1 = region(t1, end(t1, [t2, firstAns])), r2 = region(t2, end(t2, [firstAns]));
   return {
     hasMarkers: a1 >= 0 || a2 >= 0,
     has1: a1 >= 0 || t1 >= 0,
     has2: a2 >= 0 || t2 >= 0,
-    task1Prompt: clean(slice(t1, t1 < 0 ? -1 : (end(t1, [t2, firstAns]) || -1))).join('\n').trim(),
-    task2Prompt: clean(slice(t2, t2 < 0 ? -1 : (end(t2, [firstAns]) || -1))).join('\n').trim(),
+    task1Prompt: r1.prompt,
+    task2Prompt: r2.prompt,
+    task1Above: r1.above,
+    task2Above: r2.above,
     task1Answer: a1 < 0 ? '' : clean(slice(a1, end(a1, [a2]) || -1)).join('\n').trim(),
     task2Answer: a2 < 0 ? '' : clean(slice(a2, end(a2, [a1]) || -1)).join('\n').trim(),
   };
