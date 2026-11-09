@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-09.2';
+const CLASSROOM_VERSION = '2026-11-09.3';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -301,8 +301,8 @@ function saoLuuNgay() {
   return r;
 }
 
-// Mỗi lượt nhanh ~10 giây (chỉ bài tập đang mở, danh sách HS lưu tạm 6 giờ) nên 10 phút/lần vẫn trong giới hạn.
-const QUICK_SYNC_MINUTES = 10;
+// Mỗi lượt nhanh vài giây (chỉ bài tập đang mở, danh sách HS lưu tạm 6 giờ) nên 15 phút/lần vẫn xa giới hạn 90 phút/ngày.
+const QUICK_SYNC_MINUTES = 15;
 
 /** Bật lượt cập nhật nhanh nếu chưa có (bản cũ chỉ có lượt mỗi giờ). */
 function ensureQuickSyncTrigger_() {
@@ -321,6 +321,8 @@ function quickSyncJob_() {
   const hour = Number(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'H'));
   if (hour < 6) return; // đêm khuya: để lượt mỗi giờ lo, tiết kiệm thời gian chạy trong ngày
   if (runtimeTodayMs_() >= RUNTIME_WARN_MIN * 60000) return; // sắp hết thời gian chạy trong ngày: chỉ còn lượt mỗi giờ
+  const lastSync = Number(PropertiesService.getScriptProperties().getProperty('LAST_SYNC_MS') || 0);
+  if (lastSync && Date.now() - lastSync < 8 * 60000) return; // vừa đồng bộ (lượt mỗi giờ / cập nhật ngay): bỏ qua
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(2000)) return; // lượt khác đang chạy: lần sau
   try {
@@ -353,7 +355,17 @@ function syncNow_() {
 function hourlyJob() { return trackRun_(hourlyJob_); }
 function hourlyJob_() {
   safeStep_('Cập nhật nhanh', ensureQuickSyncTrigger_);
+  const hour = Number(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'H'));
+  // Đêm khuya (1h–5h): chỉ kiểm tra sao lưu tuần và chạy đầy đủ 1 lượt lúc 2h sáng để tiết kiệm hạn mức 90 phút/ngày
+  if (hour >= 1 && hour <= 5 && hour !== 2) {
+    withLock_(() => {
+      const bk = safeStep_('Sao lưu', () => backupJob_(false));
+      if (bk) log_('Sao lưu', bk);
+    });
+    return;
+  }
   withLock_(() => {
+    const formCache = {};
     const n = safeStep_('Lớp mới', detectNewCourses_);
     const a = syncAll_();
     const h = safeStep_('HS mới', syncNewStudents_);
@@ -361,11 +373,11 @@ function hourlyJob_() {
     const bk = safeStep_('Sao lưu', () => backupJob_(false));
     if (bk) log_('Sao lưu', bk);
     const rc = safeStep_('Kiểm tra lại Writing', recheckWritingSkips_);
-    const b = gradeAll_();
+    const b = gradeAll_({ formCache });
     const w = syncWritingScores_();
     const c = getConfig_().autoSend ? sendApprovedFeedback_() : '';
-    const d = rlAfterDeadline_({});
-    const p = getConfig_().penaltyOn ? fillPenaltySheets_(false).summary : '';
+    const d = rlAfterDeadline_({ formCache });
+    const p = getConfig_().penaltyOn ? fillPenaltySheets_(false, formCache).summary : '';
     log_('Chạy tự động', [n, a, h, rc, b, w, c, d, p].filter(String).join(' | '));
   });
 }
@@ -849,6 +861,7 @@ function syncAll_(opts) {
   }
 
   if (!opts.activeOnly || newSub.length || newCw.length || nChanged) buildOverview_();
+  try { PropertiesService.getScriptProperties().setProperty('LAST_SYNC_MS', String(Date.now())); } catch (e) { /* bỏ qua */ }
   return (opts.activeOnly ? 'Cập nhật nhanh ' : 'Đồng bộ ') + courses.length + ' lớp, ' + nWork + ' bài tập, ' + nSub + ' lượt nộp (' + newSub.length + ' mới' +
     (nChanged ? ', ' + nChanged + ' đổi trạng thái' : '') + ').';
 }
@@ -961,7 +974,7 @@ function detectSkill_(text) {
 // ---------------------------------------------------------------------------
 // CHẤM BÀI
 // ---------------------------------------------------------------------------
-/** opts.quick: bỏ qua bài AI đang "Chờ" (để lượt thử lại 20 phút / mỗi giờ lo), tránh gọi AI dồn dập. */
+/** opts.quick: bỏ qua bài AI đang "Chờ:" (để lượt thử lại 20 phút / mỗi giờ lo), tránh gọi AI dồn dập. */
 function gradeAll_(opts) {
   opts = opts || {};
   const cfg = getConfig_();
@@ -971,7 +984,7 @@ function gradeAll_(opts) {
   cwT.rows.forEach(r => { cwById[String(r[C['CourseWork ID']])] = r; });
   const keys = loadAnswerKeys_();
   const bands = loadBands_();
-  const formCache = {}, taskCache = {}, webCtx = {};
+  const formCache = opts.formCache || {}, taskCache = {}, webCtx = {};
   let nRL = 0, nAI = 0, nWeb = 0, nErr = 0, stoppedByQuota = false, aiDown = false, nWait = 0;
 
   for (let i = 0; i < subT.rows.length; i++) {
@@ -986,11 +999,16 @@ function gradeAll_(opts) {
     const isWeb = /^Writing/.test(skill) && cfg.writingViaWeb;
     const isAI = !isWeb && /^Writing|^Speaking/.test(skill);
     if (!isRL && !isAI && !isWeb) continue;
-    // R/L làm trên Form: chấm ngay khi có câu trả lời, kể cả khi HS chưa bấm "Nộp" trên Classroom
+    // R/L làm trên Form: chấm ngay khi có câu trả lời, kể cả khi HS chưa bấm "Nộp" trên Classroom.
+    // Lượt cập nhật nhanh chỉ mở Form của bài đang mở / vừa hết hạn (≤ 2 ngày); bài cũ hơn để lượt mỗi giờ dò.
     const rlForm = isRL && rlSource_(cw, skill).formUrl;
-    if (!needsGrading_(r) && !(rlForm && notGradedYet_(r))) continue;
+    const due = cw[C['Hạn nộp']];
+    const rlQuick = !opts.quick || !(due instanceof Date) || due.getTime() >= Date.now() - 2 * 86400e3;
+    const gs = String(r[S['Trạng thái chấm']] || '');
+    if (!needsGrading_(r) && !(rlForm && notGradedYet_(r) && rlQuick)) continue;
+    if (opts.quick && rlForm && !rlQuick && /^Chờ:/.test(gs)) continue;
     if ((isAI || isWeb) && nAI >= cfg.maxAi) continue;
-    if (opts.quick && (isAI || isWeb) && String(r[S['Trạng thái chấm']] || '').indexOf('Chờ') === 0) continue;
+    if (opts.quick && (isAI || isWeb) && /^Chờ:/.test(gs)) continue;
     if ((stoppedByQuota || aiDown) && (isAI || (isRL && !rlForm))) { if (aiDown && isAI) nWait++; continue; } // phần cần AI để lần sau, phần khác chấm tiếp
 
     let result;
@@ -998,7 +1016,7 @@ function gradeAll_(opts) {
       if (isRL) {
         result = gradeRL_(r, cw, skill, keys, bands, formCache, cfg);
         if (result.usedAI) { nAI++; Utilities.sleep(cfg.aiSleep * 1000); }
-        if (!result.skip) nRL++; // không đếm bài không có đáp án/Form (chỉ theo dõi nộp bài)
+        if (!result.skip && !result.waiting) nRL++; // chỉ đếm bài thực sự chấm được điểm
       } else if (isWeb) {
         result = sendToWritingSite_(r, cw, skill, cfg, webCtx);
         if (/^Đã gửi lên web/.test(result.status)) nWeb++;
@@ -1030,12 +1048,13 @@ function gradeAll_(opts) {
     (aiDown ? ' — Gemini quá tải: ' + nWait + ' bài chờ, ' + (retryAt ? 'thử lại lúc ' + retryAt : 'thử lại lần sau') + ', các bài khác vẫn chấm' : '');
 }
 
-/** Bài cần chấm: đã nộp, và (chưa chấm | đang "Chờ" | nộp lại sau lần chấm trước). Xoá ô "Trạng thái chấm" để chấm lại. */
+/** Bài cần chấm: đã nộp, và (chưa chấm | đang "Chờ" | nộp lại sau lần chấm trước); hoặc được đặt "Chờ chấm" để chấm lại. */
 function needsGrading_(r) {
   const st = r[S['Trạng thái']];
   const turned = r[S['Nộp lúc']];
-  if (!turned || [STATUS.ON_TIME, STATUS.LATE, STATUS.RETURNED].indexOf(st) < 0) return false;
   const gs = String(r[S['Trạng thái chấm']] || '');
+  if (gs === 'Chờ chấm' && (turned || r[S['File IDs']])) return true;
+  if (!turned || [STATUS.ON_TIME, STATUS.LATE, STATUS.RETURNED].indexOf(st) < 0) return false;
   if (!gs || gs.indexOf('Chờ') === 0) return true;
   const at = r[S['Chấm lúc']];
   return at instanceof Date && new Date(turned) > at && st !== STATUS.RETURNED;
@@ -1071,6 +1090,7 @@ function rlSource_(cw, skill) {
 
 function writeGrade_(t, i, res) {
   const r = t.rows[i];
+  const prev = r.slice(S['Điểm'], S['Chấm lúc'] + 1);
   const set = (k, v) => { if (v !== undefined) r[S[k]] = v; };
   set('Điểm', res.score);
   set('Band', res.band);
@@ -1078,7 +1098,9 @@ function writeGrade_(t, i, res) {
   set('File nhận xét', res.docUrl);
   set('Trạng thái chấm', res.status);
   if (res.stamp) r[S['Chấm lúc']] = new Date();
-  t.sh.getRange(i + 2, S['Điểm'] + 1, 1, 6).setValues([r.slice(S['Điểm'], S['Chấm lúc'] + 1)]);
+  const next = r.slice(S['Điểm'], S['Chấm lúc'] + 1);
+  if (!res.stamp && next.every((v, idx) => cellSame_(v, prev[idx]))) return;
+  t.sh.getRange(i + 2, S['Điểm'] + 1, 1, 6).setValues([next]);
 }
 
 // ---- Reading / Listening ---------------------------------------------------
@@ -1096,7 +1118,7 @@ function gradeRL_(r, cw, skill, keys, bands, formCache, cfg) {
     const resp = fr[email];
     if (!resp) {
       // HS chưa nộp bài: im lặng chờ. Đã nộp mà chưa có câu trả lời Form: báo để giáo viên biết
-      return r[S['Nộp lúc']] ? { status: 'Chờ: chưa thấy câu trả lời trên Form của HS này' } : { skip: true };
+      return r[S['Nộp lúc']] ? { status: 'Chờ: chưa thấy câu trả lời trên Form của HS này', waiting: true } : { skip: true };
     }
     if (!key) {
       if (!resp.max) throw new PermanentError('Form không phải dạng Quiz và chưa có Mã đáp án');
@@ -2134,7 +2156,8 @@ function sendToWritingSite_(r, cw, skill, cfg, webCtx) {
   const essay = writingEssay_(r, cw, skill, cfg, true);
   if (!essay.text) return { status: essay.stop || ('Bỏ qua: ' + essay.note), stamp: true, resubmit: essay.resubmit };
 
-  const turned = new Date(r[S['Nộp lúc']]);
+  const rawTurned = r[S['Nộp lúc']] ? new Date(r[S['Nộp lúc']]) : null;
+  const turned = rawTurned && !isNaN(rawTurned.getTime()) ? rawTurned : new Date();
   const payload = {
     // Mỗi lần nộp (kể cả nộp lại) là 1 bài trên web; gửi lại cùng lần nộp sẽ không bị trùng
     submissionId: ('cr-' + r[S['Submission ID']] + '-' + Math.floor(turned.getTime() / 1000)).slice(0, 64),
@@ -3233,6 +3256,8 @@ function scaleLevel_(scale, correct, total) {
 // ---- Phân tích file Writing ----------------------------------------------------
 const ANSWER_MARK_ = { 1: /^TASK\s*1\s*(?:[–—:-]\s*)?Answer\b/i, 2: /^TASK\s*2\s*(?:[–—:-]\s*)?Answer\b/i };
 function parseWriting_(paras) {
+  // Xuống dòng mềm (Shift+Enter: <w:br/> trong Word, \u000b trong Google Docs) nằm chung 1 <w:p>: tách thành dòng riêng để nhận đúng dòng mốc.
+  paras = (paras || []).reduce((acc, p) => acc.concat(String(p).split(/[\r\n\u000b]+/).map(s => s.trim()).filter(String)), []);
   const idx = re => paras.findIndex(p => re.test(p));
   const t1 = idx(/^WRITING TASK 1\b/i), t2 = idx(/^WRITING TASK 2\b/i);
   // Dòng mốc "TASK 2 – Answer"; HS hay sửa thành "TASK 2 Answer" / "Task 2: Answer" (lấy dòng mốc đầu tiên,
@@ -3285,7 +3310,7 @@ function rlAfterDeadline_(opts) {
   const keys = loadAnswerKeys_();
   const bands = loadBands_();
   let info = null;
-  const formCache = {};
+  const formCache = opts.formCache || {};
   const now = Date.now();
   const st = { sent: 0, waitQuota: 0, analyzed: [], notes: [] };
 
@@ -3335,12 +3360,18 @@ function rlAfterDeadline_(opts) {
 /** Gửi email kết quả cho HS đã làm phần R/L này và chưa được gửi. */
 function sendRLResults_(subT, ctx, bands, formCache, cfg, st) {
   const cwId = String(ctx.cw[C['CourseWork ID']]);
-  const fr = ctx.formUrl ? getFormResponses_(ctx.formUrl, formCache) : null;
+  const pending = [];
   for (let i = 0; i < subT.rows.length; i++) {
-    if (timeUp_()) return;
     const r = subT.rows[i];
     if (String(r[S['CourseWork ID']]) !== cwId || String(r[S['Kỹ năng']]) !== ctx.skill) continue;
     if (r[S['Đã gửi lúc']] || !r[S['Email']] || String(r[S['Trạng thái chấm']]) !== 'Đã chấm') continue;
+    pending.push(i);
+  }
+  if (!pending.length) return;
+  const fr = ctx.formUrl ? getFormResponses_(ctx.formUrl, formCache) : null;
+  for (let p = 0; p < pending.length; p++) {
+    if (timeUp_()) return;
+    const i = pending[p], r = subT.rows[i];
     let answers = null;
     if (fr) {
       const resp = fr[String(r[S['Email']]).toLowerCase()];
@@ -3842,11 +3873,15 @@ function itemStats_(students, key) {
 function analyzeItems_(cwT, ci, ctx, subT, formCache, cfg, afterDeadline) {
   const cw = cwT.rows[ci];
   const cwId = String(cw[C['CourseWork ID']]);
+  const data = cwData_(cw);
+  data.analysis = data.analysis || {};
+  const prev = data.analysis[ctx.k] || {};
+  const cwRows = subT.rows.filter(r => String(r[S['CourseWork ID']]) === cwId && String(r[S['Kỹ năng']]) === ctx.skill && r[S['Email']]);
+  if (afterDeadline && prev.emailed && cwRows.length && cwRows.every(r => r[S['Đã gửi lúc']])) return '';
   const fr = getFormResponses_(ctx.formUrl, formCache);
   const seen = {}, students = [];
   let roster = 0;
-  subT.rows.forEach(r => {
-    if (String(r[S['CourseWork ID']]) !== cwId || String(r[S['Kỹ năng']]) !== ctx.skill) return;
+  cwRows.forEach(r => {
     const e = String(r[S['Email']] || '').toLowerCase();
     if (!e || seen[e]) return;
     seen[e] = true; roster++;
@@ -3855,9 +3890,6 @@ function analyzeItems_(cwT, ci, ctx, subT, formCache, cfg, afterDeadline) {
   if (!students.length) return '';
   const a = itemStats_(students, ctx.key);
   const sig = students.map(s => s.email + ':' + Object.keys(s.ok).filter(q => s.ok[q]).join(',')).sort().join('|');
-  const data = cwData_(cw);
-  data.analysis = data.analysis || {};
-  const prev = data.analysis[ctx.k] || {};
   const needMail = afterDeadline && !prev.emailed;
   if (prev.sig === sig && !needMail) return '';
 
@@ -4158,9 +4190,9 @@ function a1_(row0, col0) {
  * Điền file phạt cho các bài đã hết hạn. dryRun: chỉ báo sẽ điền gì.
  * Trả về { summary (1 dòng cho Nhật ký), report (chi tiết) }.
  */
-function fillPenaltySheets_(dryRun) {
+function fillPenaltySheets_(dryRun, sharedFormCache) {
   const cfg = getConfig_();
-  if (!dryRun) safeStep_('HS mới', syncNewStudents_); // HS mới vào lớp: thêm vào file phạt trước khi ghép tên
+  if (!dryRun && !sharedFormCache) safeStep_('HS mới', syncNewStudents_); // HS mới vào lớp: thêm vào file phạt trước khi ghép tên
   ensureHeaders_(SH.COURSES, COURSE_HEADERS);
   const courses = readTable_(SH.COURSES, COURSE_HEADERS).rows.filter(r => r[0] === true && r[C_LINKPEN_()]);
   if (!courses.length) return { summary: '', report: 'Chưa có lớp nào có "Link file phạt" (sheet Lớp học).' };
@@ -4169,7 +4201,7 @@ function fillPenaltySheets_(dryRun) {
   const mapT = initTable_(SH.PENMAP, PENMAP_HEADERS);
   const mapRows = readTable_(SH.PENMAP, PENMAP_HEADERS).rows;
   const now = Date.now();
-  const formCache = {};
+  const formCache = sharedFormCache || {};
   const lines = [], problems = [];
   let nWrite = 0;
   const props = PropertiesService.getScriptProperties();
@@ -5095,16 +5127,36 @@ function styleHeader_(sh, n) {
   sh.setFrozenRows(1);
 }
 
+function cellSame_(a, b) {
+  if (a === b) return true;
+  if (a && b && typeof a.getTime === 'function' && typeof b.getTime === 'function') return a.getTime() === b.getTime();
+  return false;
+}
+
 function readTable_(name, headers) {
   const sh = sheet_(name);
   const last = sh.getLastRow();
   const rows = last > 1 ? sh.getRange(2, 1, last - 1, headers.length).getValues() : [];
-  return { sh, rows, headers };
+  return { sh, rows, orig: rows.map(r => r.slice()), headers };
 }
 
 function writeCols_(t, c0, c1) {
   if (!t.rows.length) return;
+  if (t.orig && t.orig.length === t.rows.length) {
+    let dirty = false;
+    outer: for (let i = 0; i < t.rows.length; i++) {
+      for (let c = c0; c <= c1; c++) {
+        if (!cellSame_(t.rows[i][c], t.orig[i][c])) { dirty = true; break outer; }
+      }
+    }
+    if (!dirty) return;
+  }
   t.sh.getRange(2, c0 + 1, t.rows.length, c1 - c0 + 1).setValues(t.rows.map(r => r.slice(c0, c1 + 1)));
+  if (t.orig && t.orig.length === t.rows.length) {
+    for (let i = 0; i < t.rows.length; i++) {
+      for (let c = c0; c <= c1; c++) t.orig[i][c] = t.rows[i][c];
+    }
+  }
 }
 
 function indexBy_(rows, col) {

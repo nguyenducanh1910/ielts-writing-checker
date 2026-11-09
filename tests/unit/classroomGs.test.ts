@@ -488,4 +488,130 @@ describe('class system code (classroom/Code.gs)', () => {
       'Sao lưu 1 · Lớp học · Sheet',
     ]);
   });
+
+  it('reads TASK 2 – Answer when soft line breaks (<w:br/> / Shift+Enter) keep everything in one paragraph (Thành Khôi, IELTS 11)', () => {
+    const gs = load();
+    const xml =
+      '<w:document><w:body>' +
+      '<w:p><w:r><w:t>WRITING TASK 2</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>In many countries, people are consuming more sugar-based drinks. Why is this the case? What measures can be taken?</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>Write at least 250 words.</w:t><w:br w:type="textWrapping"/><w:t>TASK 2 – Answer</w:t><w:br/>' +
+      '<w:t>Consuming sugar-based drinks is becoming increasingly popular in many nations.</w:t><w:br/><w:br/>' +
+      '<w:t>In conclusion, raising taxes and educating consumers can curb sugary drink intake.</w:t><w:br/>' +
+      '<w:t>Word count: ............</w:t></w:r></w:p>' +
+      '</w:body></w:document>';
+    const paras = gs.docxXmlToParagraphs_(xml);
+    expect(paras).toHaveLength(3); // Word still has 3 <w:p> nodes (Teacher's Book tables rely on this)
+    const w = gs.parseWriting_(paras);
+    expect(w.hasMarkers).toBe(true);
+    expect(w.task2Prompt).toContain('sugar-based drinks');
+    expect(w.task2Prompt).not.toContain('Consuming sugar-based drinks');
+    expect(w.task2Answer).toBe(
+      'Consuming sugar-based drinks is becoming increasingly popular in many nations.\n' +
+        'In conclusion, raising taxes and educating consumers can curb sugary drink intake.',
+    );
+    // Google Docs soft line breaks (\u000b) are split in the same way.
+    const gdoc = gs.parseWriting_([
+      'Write at least 250 words.\u000bTASK 2 – Answer\u000bMy essay.',
+    ]);
+    expect([gdoc.hasMarkers, gdoc.task2Answer]).toEqual([true, 'My essay.']);
+  });
+
+  it('grades a submission explicitly queued as "Chờ chấm" even if the student later unsubmitted on Classroom', () => {
+    const gs = load();
+    const S = gs.__.S;
+    const STATUS = gs.__.STATUS;
+    const makeRow = (status: string, turned: unknown, gradeStatus: string, fileIds = '') => {
+      const r: unknown[] = new Array(30).fill('');
+      r[S['Trạng thái']] = status;
+      r[S['Nộp lúc']] = turned;
+      r[S['Trạng thái chấm']] = gradeStatus;
+      r[S['File IDs']] = fileIds;
+      return r;
+    };
+    // Reclaimed after turning in on time, then queued by recheckWritingSkips_ or teacher "Chấm lại".
+    expect(
+      gs.needsGrading_(makeRow(STATUS.MISSING, new Date('2026-11-07T06:34:00Z'), 'Chờ chấm')),
+    ).toBe(true);
+    // Once graded/skipped, it must not loop on subsequent runs.
+    expect(
+      gs.needsGrading_(
+        makeRow(STATUS.MISSING, new Date('2026-11-07T06:34:00Z'), 'Đã gửi lên web — chờ chấm'),
+      ),
+    ).toBe(false);
+    // Unsubmitted row with no turn-in and no file is never graded.
+    expect(gs.needsGrading_(makeRow(STATUS.MISSING, '', 'Chờ chấm', ''))).toBe(false);
+  });
+
+  it('cuts automatic trigger runtime: 15-min quickSync, skips right after sync, skips unchanged Sheet writes and completed Forms', () => {
+    const props = memoryProps({ LAST_SYNC_MS: String(Date.now() - 2 * 60000) });
+    let synced = false;
+    const gs = load({
+      PropertiesService: props.service,
+      Utilities: { formatDate: () => '10' },
+      LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => undefined }) },
+    });
+    expect(gs.__.QUICK_SYNC_MINUTES).toBe(15);
+    gs.syncAll_ = () => {
+      synced = true;
+      return '';
+    };
+    gs.quickSyncJob();
+    expect(synced).toBe(false); // skipped because syncAll_ ran 2 minutes ago
+
+    // Dirty check in writeCols_: skips setValues when unchanged, writes when changed.
+    let writes = 0;
+    const d = new Date('2026-11-07T06:34:00Z');
+    const t = {
+      rows: [['IELTS 11', new Date(d.getTime()), 'Đã nộp']],
+      orig: [['IELTS 11', new Date(d.getTime()), 'Đã nộp']],
+      sh: { getRange: () => ({ setValues: () => writes++ }) },
+    };
+    gs.writeCols_(t, 0, 2);
+    expect(writes).toBe(0);
+    t.rows[0][2] = 'Đã trả bài';
+    gs.writeCols_(t, 0, 2);
+    expect(writes).toBe(1);
+    gs.writeCols_(t, 0, 2);
+    expect(writes).toBe(1);
+
+    // writeGrade_ skips redundant writes when "Chờ: chưa thấy câu trả lời..." repeats.
+    const S = gs.__.S;
+    const subRow: unknown[] = new Array(30).fill('');
+    subRow[S['Trạng thái chấm']] = 'Chờ: chưa thấy câu trả lời trên Form của HS này';
+    let gradeWrites = 0;
+    const subT = {
+      rows: [subRow],
+      sh: { getRange: () => ({ setValues: () => gradeWrites++ }) },
+    };
+    gs.writeGrade_(subT, 0, {
+      status: 'Chờ: chưa thấy câu trả lời trên Form của HS này',
+      waiting: true,
+    });
+    expect(gradeWrites).toBe(0);
+
+    // sendRLResults_ does not open FormApp when all graded students already have Đã gửi lúc.
+    let formOpens = 0;
+    gs.getFormResponses_ = () => {
+      formOpens++;
+      return {};
+    };
+    const sentRow: unknown[] = new Array(30).fill('');
+    sentRow[S['CourseWork ID']] = 'cw1';
+    sentRow[S['Kỹ năng']] = 'Reading (Academic)';
+    sentRow[S['Email']] = 'hs@example.com';
+    sentRow[S['Trạng thái chấm']] = 'Đã chấm';
+    sentRow[S['Đã gửi lúc']] = new Date();
+    const cw: unknown[] = new Array(20).fill('');
+    cw[11] = 'cw1'; // CourseWork ID
+    gs.sendRLResults_(
+      { rows: [sentRow], sh: {} },
+      { cw, skill: 'Reading (Academic)', formUrl: 'https://docs.google.com/forms/d/x/edit' },
+      {},
+      {},
+      {},
+      { sent: 0, waitQuota: 0 },
+    );
+    expect(formOpens).toBe(0);
+  });
 });

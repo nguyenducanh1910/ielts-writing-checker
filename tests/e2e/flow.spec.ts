@@ -223,3 +223,87 @@ test('student submits an essay; admin scores it with Claude and an external tool
   await expect(page.getByText('AI4IELTS')).toHaveCount(0);
   await expect(page.getByText('Great essay!')).toHaveCount(0);
 });
+
+test('scoring and student essay pages render cleanly when partial payloads omit errors arrays', async ({
+  page,
+}) => {
+  await page.request.get(`${API}/__test/reset`);
+  const pageErrors: string[] = [];
+  page.on('pageerror', (err) => pageErrors.push(err.message));
+
+  await page.route(`${API}/**`, async (route) => {
+    const req = route.request();
+    if (req.method() !== 'POST') return route.continue();
+    let body: { action?: string };
+    try {
+      body = JSON.parse(req.postData() || '{}') as { action?: string };
+    } catch {
+      return route.continue();
+    }
+    const response = await route.fetch();
+    if (body.action === 'admin.essay') {
+      const json = (await response.json()) as {
+        ok: boolean;
+        data?: Record<string, any>;
+      };
+      if (json.ok && json.data?.essay) {
+        delete json.data.essay.errors;
+        delete json.data.recurringErrors;
+        delete json.data.emailEvents;
+        if (json.data.parent) delete json.data.parent.errors;
+        json.data.claudeDraft = {
+          rawText: '{}',
+          createdAt: '2026-11-06T08:00:00.000Z',
+          parsed: {
+            scores: { task: 6, coherence: 6, lexical: 6, grammar: 6 },
+            feedback: { task: 'Tốt.', coherence: 'Ổn.', lexical: 'Ổn.', grammar: 'Ổn.' },
+            generalComment: 'Nhận xét chung.',
+            suggestedTopic: '',
+            overall: 6,
+            // errors intentionally omitted to simulate legacy/partial draft rows
+          },
+        };
+      }
+      return route.fulfill({ response, json });
+    }
+    if (body.action === 'essays.get') {
+      const json = (await response.json()) as {
+        ok: boolean;
+        data?: Record<string, any>;
+      };
+      if (json.ok && json.data) {
+        delete json.data.errors;
+      }
+      return route.fulfill({ response, json });
+    }
+    return route.fulfill({ response });
+  });
+
+  // Admin opens the first pending essay with missing `errors` and partial `claudeDraft`.
+  await page.request.post(`${API}/`, {
+    headers: { 'Content-Type': 'text/plain' },
+    data: JSON.stringify({ action: 'auth.requestLink', payload: { email: 'admin@example.com' } }),
+  });
+  await openLoginLink(page, 'admin@example.com');
+  await page.goto('#/admin');
+  await page.getByRole('link', { name: 'Score' }).first().click();
+  await expect(page.getByRole('heading', { name: /^Score:/ })).toBeVisible();
+  await expect(page.getByText('0 error(s):')).toBeVisible();
+  await page.getByRole('button', { name: 'Load into form' }).click();
+  await expect(page.getByText(/Claude’s draft is loaded into the form/)).toBeVisible();
+
+  // Student opens a scored essay whose server payload omitted `errors`.
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: 'Log out' }).click();
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+  await page.request.post(`${API}/`, {
+    headers: { 'Content-Type': 'text/plain' },
+    data: JSON.stringify({ action: 'auth.requestLink', payload: { email: 'demo.an@example.com' } }),
+  });
+  await openLoginLink(page, 'demo.an@example.com');
+  await expect(page.getByRole('heading', { name: 'Lớp học của em' })).toBeVisible();
+  await page.goto('#/essays');
+  await page.locator('table a[href^="#/essays/"]').first().click();
+  await expect(page.getByRole('heading', { name: 'Bài viết của em' })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});

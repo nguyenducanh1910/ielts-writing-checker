@@ -146,9 +146,9 @@ export function progressView(d: Progress, teacher = false): HTMLElement {
       acc !== null ? statTile({ value: `${acc}%`, label: 'Đúng (Reading + Listening)' }) : null,
     ),
     h('h2', null, 'Band theo thời gian'),
-    d.points.length ? progressChart(d.points) : empty('Chưa có band nào.'),
+    Array.isArray(d.points) && d.points.length ? progressChart(d.points) : empty('Chưa có band nào.'),
     h('h2', null, 'Lỗi hay lặp lại'),
-    d.errors && d.errors.length
+    Array.isArray(d.errors) && d.errors.length
       ? h(
           'ul',
           { class: 'cl-err-bars' },
@@ -160,7 +160,9 @@ export function progressView(d: Progress, teacher = false): HTMLElement {
               h(
                 'span',
                 { class: 'cl-err-bar' },
-                h('span', { style: `width:${Math.round((e.count / d.errors![0].count) * 100)}%` }),
+                h('span', {
+                  style: `width:${Math.round((e.count / Math.max(1, d.errors![0].count)) * 100)}%`,
+                }),
               ),
               h('b', null, `${e.count} câu`),
             ),

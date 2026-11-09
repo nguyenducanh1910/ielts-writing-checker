@@ -281,4 +281,23 @@ describe('loose JSON from chat replies', () => {
     expect(parseJsonLoosely('[{"a": 1}]')).toEqual([{ a: 1 }]);
     expect(parseJsonLoosely('{"a": "cut')).toBeUndefined();
   });
+
+  it('handles missing error arrays in drafts and prompts without throwing errors.map', () => {
+    expect(
+      matchClaudeErrors(
+        undefined as unknown as Parameters<typeof matchClaudeErrors>[0],
+        [{ id: 'c1', label: 'Articles' }],
+        'Sample essay body.',
+      ),
+    ).toEqual([]);
+    const prompt = buildClaudePrompt({
+      taskType: 'task2',
+      prompt: 'Topic?',
+      topic: 'Education',
+      wordCount: 3,
+      body: 'Sample essay body.',
+      recurringErrors: undefined as unknown as [],
+    });
+    expect(prompt).toContain('- none recorded');
+  });
 });

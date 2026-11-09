@@ -28,7 +28,10 @@ export function scoreTable(score: ScoreView, taskType: TaskType): HTMLElement {
   return table(
     ['Tiêu chí', 'Band'],
     [
-      ...CRITERIA.map((c) => [criterionLabel(c, taskType), formatBand(score.criteria[c])]),
+      ...CRITERIA.map((c) => [
+        criterionLabel(c, taskType),
+        formatBand(score.criteria?.[c] ?? null),
+      ]),
       [h('strong', null, 'Tổng'), h('strong', null, formatBand(score.overall))],
     ],
   );
@@ -40,17 +43,22 @@ export function comparisonTable(
   rewrite: ScoreView,
   taskType: TaskType,
 ): HTMLElement {
-  const row = (label: string, a: number, b: number) => [
-    label,
-    formatBand(a),
-    formatBand(b),
-    h('span', { class: b > a ? 'up' : b < a ? 'down' : '' }, signed(b - a)),
-  ];
+  const row = (label: string, a: number | null | undefined, b: number | null | undefined) => {
+    const valid = typeof a === 'number' && typeof b === 'number';
+    return [
+      label,
+      formatBand(a ?? null),
+      formatBand(b ?? null),
+      valid
+        ? h('span', { class: b > a ? 'up' : b < a ? 'down' : '' }, signed(b - a))
+        : h('span', null, '–'),
+    ];
+  };
   return table(
     ['Tiêu chí', 'Bài gốc', 'Viết lại', 'Thay đổi'],
     [
       ...CRITERIA.map((c) =>
-        row(criterionLabel(c, taskType), original.criteria[c], rewrite.criteria[c]),
+        row(criterionLabel(c, taskType), original.criteria?.[c], rewrite.criteria?.[c]),
       ),
       row('Tổng', original.overall, rewrite.overall),
     ],
@@ -146,7 +154,7 @@ export function essayDetailPage(ctx: RouteContext): Node {
       const sections: Child[] = [meta, facts];
 
       // Result locked: the error practice first, then the page reloads with the full result.
-      if (essay.practice) {
+      if (essay.practice && Array.isArray(essay.practice.tasks)) {
         sections.push(practiceView(essay.id, essay.practice.tasks, reload));
         if (essay.rewrite && essay.rewrite.status !== 'waived') {
           sections.push(
@@ -246,12 +254,12 @@ export function essayDetailPage(ctx: RouteContext): Node {
           essay.score.generalComment
             ? h('div', { class: 'card' }, markdown(essay.score.generalComment))
             : null,
-          ...CRITERIA.filter((c) => essay.score!.feedback[c]).map((c) =>
+          ...CRITERIA.filter((c) => essay.score!.feedback?.[c]).map((c) =>
             h(
               'div',
               { class: `card criterion-card crit-${c}` },
               h('h3', null, criterionLabel(c, essay.taskType)),
-              markdown(essay.score!.feedback[c]),
+              markdown(essay.score!.feedback![c]),
             ),
           ),
         );

@@ -129,7 +129,8 @@ export function topErrorsByCriterion(
   for (const c of CRITERIA) {
     const groups = new Map<string, { count: number; latest: DashError; at: string }>();
     for (const e of recent) {
-      for (const err of e.errors.filter((x) => x.criterion === c)) {
+      const errs = Array.isArray(e.errors) ? e.errors : [];
+      for (const err of errs.filter((x) => x.criterion === c)) {
         const g = groups.get(err.category);
         if (!g) groups.set(err.category, { count: 1, latest: err, at: e.submittedAt });
         else {
@@ -187,7 +188,7 @@ export function progressHighlights(essays: DashEssay[]): Highlight[] {
   const tally = (list: DashEssay[]) => {
     const m = new Map<string, { count: number; criterion: Criterion }>();
     for (const e of list) {
-      for (const err of e.errors) {
+      for (const err of Array.isArray(e.errors) ? e.errors : []) {
         const t = m.get(err.category) ?? { count: 0, criterion: err.criterion };
         t.count++;
         m.set(err.category, t);

@@ -76,8 +76,9 @@ export interface CopyForClaudeInput {
 
 /** Task details, prompt, recurring errors and the marked essay: shared by single and batch prompts. */
 function essayBlock(input: CopyForClaudeInput): string {
-  const recurring = input.recurringErrors.length
-    ? input.recurringErrors.map((e) => `- ${e.category} (${e.count})`).join('\n')
+  const recurringList = Array.isArray(input.recurringErrors) ? input.recurringErrors : [];
+  const recurring = recurringList.length
+    ? recurringList.map((e) => `- ${e.category} (${e.count})`).join('\n')
     : '- none recorded';
   const imageNote =
     input.taskType === 'task1_academic'
@@ -431,12 +432,14 @@ export function matchClaudeErrors(
   activeCategories: CategoryOption[],
   body: string,
 ): MatchedError[] {
-  const byLabel = new Map(activeCategories.map((c) => [c.label.trim().toLowerCase(), c.id]));
+  const list = Array.isArray(errors) ? errors : [];
+  const cats = Array.isArray(activeCategories) ? activeCategories : [];
+  const byLabel = new Map(cats.map((c) => [c.label.trim().toLowerCase(), c.id]));
   const spans = placeExcerpts(
     body,
-    errors.map((e) => e.excerpt),
+    list.map((e) => e.excerpt),
   );
-  return errors.map((e, i) => {
+  return list.map((e, i) => {
     const categoryId = byLabel.get(e.category.trim().toLowerCase()) ?? null;
     const span = spans[i];
     return {

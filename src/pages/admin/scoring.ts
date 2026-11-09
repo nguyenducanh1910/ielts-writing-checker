@@ -183,11 +183,31 @@ function categoryOptions(categories: CategoryRow[], current: string | null): HTM
 }
 
 function buildScoring(
-  data: AdminEssayResponse,
+  rawData: AdminEssayResponse,
   reload: () => void,
   nextFilters: Record<string, string>,
 ): Child {
-  const essay = data.essay;
+  const essay = {
+    ...rawData.essay,
+    errors: Array.isArray(rawData.essay.errors) ? rawData.essay.errors : [],
+  };
+  const data: AdminEssayResponse = {
+    ...rawData,
+    essay,
+    parent: rawData.parent
+      ? {
+          ...rawData.parent,
+          errors: Array.isArray(rawData.parent.errors) ? rawData.parent.errors : [],
+        }
+      : null,
+    categories: Array.isArray(rawData.categories) ? rawData.categories : [],
+    topics: Array.isArray(rawData.topics) ? rawData.topics : [],
+    sources: Array.isArray(rawData.sources) ? rawData.sources : [],
+    sourceFeedback: Array.isArray(rawData.sourceFeedback) ? rawData.sourceFeedback : [],
+    calibration: Array.isArray(rawData.calibration) ? rawData.calibration : [],
+    recurringErrors: Array.isArray(rawData.recurringErrors) ? rawData.recurringErrors : [],
+    emailEvents: Array.isArray(rawData.emailEvents) ? rawData.emailEvents : [],
+  };
   const taskType = essay.taskType;
   const activeCats = data.categories.filter((c) => c.active);
   let requestId = newRequestId();
@@ -201,10 +221,10 @@ function buildScoring(
   const rw = essay.rewrite;
   const state: FormState = {
     scores: Object.fromEntries(
-      CRITERIA.map((c) => [c, essay.score?.criteria[c] ?? null]),
+      CRITERIA.map((c) => [c, essay.score?.criteria?.[c] ?? null]),
     ) as Record<Criterion, number | null>,
     feedback: Object.fromEntries(
-      CRITERIA.map((c) => [c, essay.score?.feedback[c] ?? '']),
+      CRITERIA.map((c) => [c, essay.score?.feedback?.[c] ?? '']),
     ) as Record<Criterion, string>,
     generalComment: essay.score?.generalComment ?? '',
     category: {
@@ -1039,19 +1059,24 @@ function buildScoring(
       });
       if (!ok) return;
     }
+    const draftErrors = Array.isArray(draft.errors) ? draft.errors : [];
     const matched = matchClaudeErrors(
-      draft.errors,
+      draftErrors,
       activeCats.map((c) => ({ id: c.id, label: c.label })),
       essay.body,
     );
-    state.scores = { ...draft.scores };
-    state.feedback = { ...draft.feedback };
-    state.generalComment = draft.generalComment;
+    state.scores = Object.fromEntries(
+      CRITERIA.map((c) => [c, draft.scores?.[c] ?? null]),
+    ) as Record<Criterion, number | null>;
+    state.feedback = Object.fromEntries(
+      CRITERIA.map((c) => [c, draft.feedback?.[c] ?? '']),
+    ) as Record<Criterion, string>;
+    state.generalComment = draft.generalComment ?? '';
     // Task 1 Academic has no topic; only Task 2 takes Claude's suggested topic.
     const topic =
       taskType === 'task2'
         ? matchTopic(
-            draft.suggestedTopic,
+            draft.suggestedTopic ?? '',
             data.topics.filter((t) => t.active),
           )
         : null;
@@ -1403,8 +1428,9 @@ function buildClaudePanel(opts: {
   });
 
   const showParsed = (draft: ClaudeDraft, savedAt?: string) => {
+    const draftErrors = Array.isArray(draft.errors) ? draft.errors : [];
     const unknown = matchClaudeErrors(
-      draft.errors,
+      draftErrors,
       data.categories.filter((c) => c.active).map((c) => ({ id: c.id, label: c.label })),
       essay.body,
     );
@@ -1424,12 +1450,14 @@ function buildClaudePanel(opts: {
         h(
           'p',
           null,
-          CRITERIA.map((c) => `${CRITERION_SHORT[c]} ${formatBand(draft.scores[c])}`).join(' · '),
+          CRITERIA.map(
+            (c) => `${CRITERION_SHORT[c]} ${formatBand(draft.scores?.[c] ?? null)}`,
+          ).join(' · '),
         ),
         h(
           'p',
           null,
-          `${draft.errors.length} error(s): ${unknown.filter((u) => u.unknownCategory).length} with unknown category, ${unknown.filter((u) => u.unplaced).length} unplaced.`,
+          `${draftErrors.length} error(s): ${unknown.filter((u) => u.unknownCategory).length} with unknown category, ${unknown.filter((u) => u.unplaced).length} unplaced.`,
         ),
       ),
       load,
