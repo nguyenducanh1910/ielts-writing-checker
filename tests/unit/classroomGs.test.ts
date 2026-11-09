@@ -389,6 +389,46 @@ describe('class system code (classroom/Code.gs)', () => {
     expect([both.task1Answer, both.task2Answer]).toEqual(['Chart text.', 'Essay text.']);
   });
 
+  it('takes the essay written above the answer line when the answer part is empty (Nhi Thảo, K232)', () => {
+    const gs = load();
+    const essay =
+      'Nowadays, some people think that modern lifestyles are more beneficial for future generations than traditional ways of life. ' +
+      'From my point of view, I agree with this statement because new trends help young people develop themselves and build better social connections.';
+    const paras = [
+      'WRITING TASK 2',
+      'You should spend about 40 minutes on this task.',
+      'Write about the following topic:',
+      'Following new trends, rather than preserving old traditions, will benefit future generations more.To what extent do you agree or disagree?',
+      'Give reasons for your answer and include any relevant examples from your own knowledge or experience.',
+      'Write at least 250 words.',
+      essay,
+      'In conclusion, I strongly believe that following new trends is more benefit for future generations.',
+      'TASK 2 – Answer',
+      'TASK 2 – Answer (continued)',
+      'Word count: ............',
+    ];
+    const w = gs.parseWriting_(paras);
+    expect(w.task2Answer).toBe('');
+    expect(w.task2Above).toContain('modern lifestyles');
+    expect(w.task2Above).toContain('In conclusion');
+    // The prompt sent to the AI no longer carries the student's essay.
+    expect(w.task2Prompt).toContain('To what extent do you agree or disagree?');
+    expect(w.task2Prompt).not.toContain('modern lifestyles');
+    // Usual case: nothing between the instructions and the answer line.
+    const usual = gs.parseWriting_([
+      'WRITING TASK 2',
+      'Topic?',
+      'Write at least 250 words.',
+      'TASK 2 – Answer',
+      'Essay.',
+    ]);
+    expect([usual.task2Prompt, usual.task2Above, usual.task2Answer]).toEqual([
+      'Topic?',
+      '',
+      'Essay.',
+    ]);
+  });
+
   it('re-checks Writing skipped as empty once per new version', () => {
     const props = memoryProps();
     const cells: Array<[number, unknown[]]> = [];
