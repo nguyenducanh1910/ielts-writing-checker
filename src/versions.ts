@@ -12,7 +12,7 @@ export const EXPECTED_BACKEND_VERSION: string =
 export const SITE_BUILT_AT: string =
   typeof __SITE_BUILT_AT__ === 'string' ? __SITE_BUILT_AT__ : 'dev';
 
-export const CLASSROOM_VERSION = '2026-11-09.1';
+export const CLASSROOM_VERSION = '2026-11-09.2';
 
 /** True when both sides are known and differ ("dev" builds never warn). */
 export function versionMismatch(expected: string, actual: string | undefined): boolean {
