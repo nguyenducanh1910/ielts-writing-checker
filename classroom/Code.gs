@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-07.4';
+const CLASSROOM_VERSION = '2026-11-09.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -360,12 +360,13 @@ function hourlyJob_() {
     safeStep_('Mẫu Speaking', backfillSpeakingSamples_);
     const bk = safeStep_('Sao lưu', () => backupJob_(false));
     if (bk) log_('Sao lưu', bk);
+    const rc = safeStep_('Kiểm tra lại Writing', recheckWritingSkips_);
     const b = gradeAll_();
     const w = syncWritingScores_();
     const c = getConfig_().autoSend ? sendApprovedFeedback_() : '';
     const d = rlAfterDeadline_({});
     const p = getConfig_().penaltyOn ? fillPenaltySheets_(false).summary : '';
-    log_('Chạy tự động', [n, a, h, b, w, c, d, p].filter(String).join(' | '));
+    log_('Chạy tự động', [n, a, h, rc, b, w, c, d, p].filter(String).join(' | '));
   });
 }
 
@@ -3227,11 +3228,14 @@ function scaleLevel_(scale, correct, total) {
 }
 
 // ---- Phân tích file Writing ----------------------------------------------------
+const ANSWER_MARK_ = { 1: /^TASK\s*1\s*(?:[–—:-]\s*)?Answer\b/i, 2: /^TASK\s*2\s*(?:[–—:-]\s*)?Answer\b/i };
 function parseWriting_(paras) {
   const idx = re => paras.findIndex(p => re.test(p));
   const t1 = idx(/^WRITING TASK 1\b/i), t2 = idx(/^WRITING TASK 2\b/i);
-  const a1 = idx(/^TASK 1\s*[–—-]\s*Answer\b/i), a2 = idx(/^TASK 2\s*[–—-]\s*Answer\b/i);
-  const clean = arr => arr.filter(p => !/^(TASK [12]\s*[–—-]\s*Answer|Word count|You should spend|Write at least|Write about the following)/i.test(p) &&
+  // Dòng mốc "TASK 2 – Answer"; HS hay sửa thành "TASK 2 Answer" / "Task 2: Answer" (lấy dòng mốc đầu tiên,
+  // các dòng "(continued)" phía sau được bỏ khi ghép bài)
+  const a1 = idx(ANSWER_MARK_[1]), a2 = idx(ANSWER_MARK_[2]);
+  const clean = arr => arr.filter(p => !/^(TASK\s*[12]\s*(?:[–—:-]\s*)?Answer|Word count|You should spend|Write at least|Write about the following)/i.test(p) &&
     !/^[-_.…\s]+$/.test(p) && !/^\d{1,2}$/.test(p));
   const slice = (s, e) => (s < 0 ? [] : paras.slice(s + 1, e < 0 ? undefined : e));
   const firstAns = [a1, a2].filter(x => x >= 0).sort((x, y) => x - y)[0];
@@ -5484,6 +5488,27 @@ function portalApproveMany_(p) {
   if (p.sendNow === true && n) message += ' ' + (sendApprovedFeedback_() || 'Email sẽ gửi ở lần chạy tự động kế tiếp.');
   else if (n) message += ' Email sẽ gửi ở lần chạy tự động kế tiếp (trong vòng 1 giờ).';
   return { message, approved: n, skipped };
+}
+
+/**
+ * Một lần sau mỗi bản code mới: bài Writing bị bỏ qua vì không đọc được phần bài làm trong file mẫu
+ * (VD HS sửa dòng "TASK 2 – Answer" thành "TASK 2 Answer") được chấm lại — cách đọc file có thể đã tốt hơn.
+ * Bài vẫn trống thì lần chấm sau lại ghi "Bỏ qua" như cũ.
+ */
+function recheckWritingSkips_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('WRITING_RECHECK_VER') === CLASSROOM_VERSION) return '';
+  const t = readTable_(SH.SUB, SUB_HEADERS);
+  let n = 0;
+  t.rows.forEach((r, i) => {
+    if (r[S['Đã gửi lúc']]) return;
+    if (/^Bỏ qua: HS chưa viết Task|^Lỗi: không thấy dòng "TASK/.test(String(r[S['Trạng thái chấm']] || ''))) {
+      t.sh.getRange(i + 2, S['Trạng thái chấm'] + 1, 1, 2).setValues([['Chờ chấm', '']]);
+      n++;
+    }
+  });
+  props.setProperty('WRITING_RECHECK_VER', CLASSROOM_VERSION);
+  return n ? 'Chấm lại ' + n + ' bài Writing trước đó không đọc được phần bài làm' : '';
 }
 
 function portalRegrade_(p) {
