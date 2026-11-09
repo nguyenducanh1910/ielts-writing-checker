@@ -40,7 +40,7 @@ function load(globals: Sandbox = {}): Sandbox {
   // Top-level `const`/`let` are not properties of the sandbox: expose what the tests use.
   vm.runInContext(
     `${SOURCE}
-;this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES, RUNTIME_WARN_MIN,
+;this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES, RUNTIME_WARN_MIN, S,
   setProvider: (p) => { AI_PROVIDER_ = p; }, provider: () => AI_PROVIDER_ };`,
     ctx,
   );
@@ -349,6 +349,77 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(gs.normalizeKeyText_('two hours / 2 hours')).toBe('two hours|2 hours');
     expect(gs.normalizeKeyText_('week')).toBe('week');
     expect(gs.matchAnswer_('B', gs.normalizeKeyText_('B (climate change)'))).toBe(true);
+  });
+
+  it('reads the essay under "TASK 2 Answer" even without the dash (Phong, K230)', () => {
+    const gs = load();
+    // Paragraphs of "Phong Chu - Writing.docx": the student's line has no dash, the template's
+    // "(continued)" line further down still has it.
+    const essay = [
+      'Nowadays, more and more people choose to work from home and communicate with their',
+      'colleagues online instead of going to the office . Although this trend has some disadvantages',
+      'I believe that the advantages are greater',
+      'In conclusion , although working from home can lead to distractions but i believe its',
+      'advantages outweigh its disadvantages because it save time and money and provides greats',
+      'flexibility',
+    ];
+    const w = gs.parseWriting_([
+      'WRITING TASK 2',
+      'You should spend about 40 minutes on this task.',
+      'Nowadays, more and more people work from home. Do the advantages outweigh the disadvantages?',
+      'Write at least 250 words.',
+      'TASK 2 Answer',
+      ...essay,
+      'TASK 2 – Answer (continued)',
+      'Word count: ............',
+    ]);
+    expect(w.hasMarkers).toBe(true);
+    expect(w.task2Answer).toBe(essay.join('\n'));
+    expect(w.task2Prompt).toContain('Do the advantages outweigh');
+    for (const mark of ['TASK 2 – Answer', 'Task 2: Answer', 'TASK 2 - Answer', 'TASK2 Answer']) {
+      expect(gs.parseWriting_([mark, 'My essay text.']).task2Answer).toBe('My essay text.');
+    }
+    // Task 1 and Task 2 in one file stay apart.
+    const both = gs.parseWriting_([
+      'TASK 1 Answer',
+      'Chart text.',
+      'TASK 2 – Answer',
+      'Essay text.',
+    ]);
+    expect([both.task1Answer, both.task2Answer]).toEqual(['Chart text.', 'Essay text.']);
+  });
+
+  it('re-checks Writing skipped as empty once per new version', () => {
+    const props = memoryProps();
+    const cells: Array<[number, unknown[]]> = [];
+    const gs = load({ PropertiesService: props.service });
+    const S = gs.__.S;
+    const row = (status: string, sent = '') => {
+      const r: unknown[] = new Array(40).fill('');
+      r[S['Trạng thái chấm']] = status;
+      r[S['Đã gửi lúc']] = sent;
+      return r;
+    };
+    const rows = [
+      row('Bỏ qua: HS chưa viết Task 2 (phần dưới dòng "TASK 2 – Answer" trống)'),
+      row(
+        'Lỗi: không thấy dòng "TASK 2 – Answer" trong file Word của HS (có thể đã bị xoá) — cần kiểm tra tay',
+      ),
+      row('Bỏ qua: HS chưa viết Task 2 (phần dưới dòng "TASK 2 – Answer" trống)', 'sent'),
+      row('Đã chấm'),
+    ];
+    gs.readTable_ = () => ({
+      rows,
+      sh: { getRange: (i: number) => ({ setValues: (v: unknown[][]) => cells.push([i, v[0]]) }) },
+    });
+    expect(gs.recheckWritingSkips_()).toBe(
+      'Chấm lại 2 bài Writing trước đó không đọc được phần bài làm',
+    );
+    expect(cells).toEqual([
+      [2, ['Chờ chấm', '']],
+      [3, ['Chờ chấm', '']],
+    ]);
+    expect(gs.recheckWritingSkips_()).toBe(''); // once per version
   });
 
   it('keeps the 8 newest backups of each kind', () => {
