@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-09.3';
+const CLASSROOM_VERSION = '2026-11-11.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -2589,6 +2589,7 @@ function planRL_(plan, k, files) {
   // Đáp án: "BẢNG ĐÁP ÁN" trong Teacher's Book, hoặc phần "ĐÁP ÁN" cuối file đề
   let key = teacherParas ? parseKeyTable_(teacherParas) : {};
   if (!Object.keys(key).length) key = parsed.key;
+  key = spreadChoiceKeys_(key);
   if (!Object.keys(key).length) {
     throw new PermanentError('Chưa có đáp án ' + name + ': thêm Teacher\'s Book (có "BẢNG ĐÁP ÁN") hoặc file "' + name + ' - ĐÁP ÁN" vào thư mục');
   }
@@ -2620,6 +2621,18 @@ function planRL_(plan, k, files) {
   const info = teacherParas ? parseExplanations_(teacherParas) : {};
   const scale = teacherParas ? parseScale_(teacherParas) : [];
   const nExpl = Object.keys(info).filter(q => info[q].text && Number(q) <= parsed.total).length;
+  // Cột "Đáp án chấp nhận" của bảng giải thích: thêm các cách viết khác được chấp nhận (câu điền từ)
+  let nAcc = 0;
+  parsed.questions.forEach(q => {
+    const acc = info[q.n] && info[q.n].accept;
+    if (!acc || q.type === 'choice' || !key[q.n] || /^[A-L](\W|$)/.test(String(key[q.n]))) return;
+    const have = String(key[q.n]).split('|');
+    normalizeKeyText_(acc).split('|').forEach(a => {
+      if (a && !/^[A-L]$/.test(a) && !have.some(h => matchAnswer_(a, h))) { have.push(a); nAcc++; }
+    });
+    key[q.n] = have.join('|');
+  });
+  if (nAcc) plan.summaryParts.push(name + ': thêm ' + nAcc + ' cách viết được chấp nhận từ cột "Đáp án chấp nhận" của bản GV');
   if (teacherParas && nExpl < parsed.total) {
     plan.warnings.push(name + ': có giải thích ' + nExpl + '/' + parsed.total + ' câu' + (nExpl ? '' : ' (không thấy mục "Giải thích chi tiết" hay "Phân tích từng phương án" trong bản giáo viên)'));
   }
@@ -3008,7 +3021,9 @@ function parseKeyTable_(paras) {
   const P = paras.map(x => String(x).trim());
   const start = P.findIndex(p => /^(\d+(\.\d+)*\.?\s*)?(BẢNG ĐÁP ÁN|ĐÁP ÁN|ANSWER KEY)\s*:?\s*$/i.test(p));
   if (start < 0) return {};
-  const END = /^(\d+(\.\d+)*\.?\s+[A-ZĐÀ-Ỹ]|Chấm|Quy tắc|Lưu ý|Ghi chú\s*:|Thống kê)/;
+  // Hết bảng: mục tiếp theo ("3. …", "2b. Giải thích…", "Độ khó…") hoặc phần ghi chú
+  const END = /^(\d+[a-z]?(\.\d+)*\.?\s+[A-ZĐÀ-Ỹ]|Chấm|Quy tắc|Lưu ý|Ghi chú\s*:|Thống kê)/;
+  const isSection = p => p.length <= 90 && ['expl', 'diff', 'scale'].some(k => TB_SECTIONS[k].some(re => re.test(p.replace(TB_NUM, ''))));
   const isNum = p => /^\d{1,2}$/.test(p);
   const isHdr = p => p.length <= 30 && !/\d/.test(p) && !/[.:;!?]$/.test(p);
   // Tiêu đề bảng: các ô ngắn ngay sau (hoặc chứa) dòng "Đáp án"
@@ -3028,7 +3043,7 @@ function parseKeyTable_(paras) {
     let last = 0;
     for (; i < P.length; i++) {
       const p = P[i];
-      if (END.test(p) && !isNum(p)) break;
+      if (!isNum(p) && (END.test(p) || isSection(p))) break;
       if (!isNum(p)) continue;
       const n = Number(p);
       if (n <= last || (last && n > last + 15) || n > 80 || key[n]) continue;
@@ -3046,13 +3061,14 @@ function parseKeyTable_(paras) {
   let pending = null;
   for (; i < P.length; i++) {
     const p = P[i];
-    if (!isNum(p) && END.test(p)) break; // hết bảng
+    if (!isNum(p) && (END.test(p) || isSection(p))) break; // hết bảng
     if (/^(Câu|Đáp án|Question|Answer)s?$/i.test(p)) continue;
     if (isNum(p) && pending === null) { pending = p; continue; }
-    if (pending !== null) { key[pending] = normalizeKeyText_(p); pending = null; continue; }
+    // Bảng đáp án đầu tiên được giữ (bảng giải thích phía sau có thể ghi lại đáp án kèm chú thích)
+    if (pending !== null) { if (!key[pending]) key[pending] = normalizeKeyText_(p); pending = null; continue; }
     p.split(/\t|\n/).forEach(seg => {
       const m = seg.match(/^\s*(\d{1,2})\s*[.):-]?\s+([^\/\s].*?)\s*$/);
-      if (m) key[m[1]] = normalizeKeyText_(m[2]);
+      if (m && !key[m[1]]) key[m[1]] = normalizeKeyText_(m[2]);
     });
   }
   return key;
@@ -3071,16 +3087,58 @@ function acceptCell_(s) {
     .map(x => x.replace(/[“”"]/g, '').trim()).filter(x => x && x.length <= 60 && !/^(không|phải|cả hai|both)/i.test(x));
 }
 
-/** "Hartley (chấp nhận: HARTLEY)" -> "Hartley|HARTLEY"; "two hours / 2 hours" -> "two hours|2 hours"; "B (climate change)" -> "B" */
+/**
+ * Một ô đáp án -> "đáp án|đáp án khác". VD:
+ *  "Hartley (chấp nhận: HARTLEY)" -> "Hartley|HARTLEY"; "two hours / 2 hours" -> "two hours|2 hours";
+ *  "B (climate change)" -> "B"; "three · 3 · three times" -> "three|3|three times";
+ *  "Saturday (viết hoa hay thường đều được; sai: Thursday)" -> "Saturday" (ghi chú tiếng Việt cho GV bỏ đi);
+ *  "Hollis (phải đúng chính tả; Marcus Hollis cũng chấp nhận)" -> "Hollis|Marcus Hollis";
+ *  "normal routine · routine (tuỳ GV) · sai: baseline" -> "normal routine" (phương án "tuỳ GV" để GV tự xét).
+ *  Ngoặc không phải ghi chú, VD "(a) water bottle", giữ nguyên = phần không bắt buộc.
+ */
 function normalizeKeyText_(s) {
-  let main = String(s).trim(), extra = [];
-  const m = main.match(/^(.*?)\s*\((?:chấp nhận|accept(?:ed)?|also)\s*:?\s*([^)]*)\)\s*$/i);
-  if (m) { main = m[1]; extra = m[2].split(/\s+\/\s+|\s*;\s*|\s*\|\s*/); }
-  // "B (climate change)" / "iv (Paragraph C)": chữ cái hoặc số La Mã kèm chú thích cho GV -> chỉ lấy chữ cái
-  const gloss = main.match(/^([A-L]|[ivx]{1,4})\s*\([^)]*\)\s*$/);
-  if (gloss) main = gloss[1];
-  const alts = main.split(/\s+\/\s+|\s*\|\s*/).concat(extra).map(x => x.trim()).filter(String);
-  return alts.filter((x, i) => alts.indexOf(x) === i).join('|');
+  const alts = [];
+  String(s).trim().split(/\s+[·•]\s+/).forEach(seg => {
+    if (/^\s*(sai|wrong|not)\s*:/i.test(seg) || /\(\s*tu[ỳỳ]\s+GV\s*\)/i.test(seg)) return;
+    const extra = [];
+    let main = seg.replace(/\(([^)]*)\)/g, (all, inner) => {
+      const acc = inner.match(/^\s*(?:chấp nhận|accept(?:ed)?|also)\s*:?\s*(.+)$/i);
+      if (acc) { extra.push.apply(extra, acc[1].split(/\s+\/\s+|\s*;\s*|\s*\|\s*/)); return ' '; }
+      if (/[:;→]|[à-ỹđ]/i.test(inner)) {
+        inner.split(/\s*;\s*/).forEach(part => {
+          const m = part.match(/^\s*(.+?)\s+cũng (?:được )?chấp nhận\s*\.?$/i);
+          if (m) extra.push(m[1]);
+        });
+        return ' ';
+      }
+      return all;
+    }).replace(/\s+/g, ' ').trim();
+    // "B (climate change)" / "iv (Paragraph C)": chữ cái hoặc số La Mã kèm chú thích cho GV -> chỉ lấy chữ cái
+    const gloss = main.match(/^([A-L]|[ivx]{1,4})\s*\([^)]*\)\s*$/);
+    if (gloss) main = gloss[1];
+    main.split(/\s+\/\s+|\s*\|\s*/).concat(extra).forEach(x => alts.push(x.trim()));
+  });
+  return alts.filter((x, i) => x && alts.indexOf(x) === i).join('|');
+}
+
+/**
+ * Cặp câu chọn 2 chữ cái ghi chung: câu 7 "A, B theo thứ tự bất kỳ", câu 8 "(xem câu trên)" hoặc trống
+ * -> câu 7 "A", câu 8 "B". Câu đã có đáp án riêng thì giữ nguyên.
+ */
+function spreadChoiceKeys_(key) {
+  const out = Object.assign({}, key);
+  const SEE = /^\(?\s*(xem câu trên|như trên|xem trên|see above|as above)\s*\)?\.?$/i;
+  Object.keys(out).map(Number).sort((a, b) => a - b).forEach(n => {
+    const t = String(out[n] || '').replace(/[,;(]?\s*(theo thứ tự bất kỳ|thứ tự bất kỳ|in any order|in either order|any order)\s*\)?\s*$/i, '').trim();
+    if (!/^[A-L](\s*(,|&|và|and)\s*[A-L])+$/i.test(t)) return;
+    const letters = t.split(/\s*(?:,|&|\bvà\b|\band\b)\s*/i).map(x => x.toUpperCase());
+    out[n] = letters[0];
+    for (let j = 1; j < letters.length; j++) {
+      const v = String(out[n + j] || '').trim();
+      if (!v || SEE.test(v)) out[n + j] = letters[j];
+    }
+  });
+  return out;
 }
 
 /**
@@ -3097,7 +3155,7 @@ const TB_SECTIONS = {
   diff: [/^(ĐỘ KHÓ|MỨC ĐỘ KHÓ|PHÂN TÍCH ĐỘ KHÓ|DIFFICULTY)/i],
   scale: [/^(THANG ĐÁNH GIÁ|THANG ĐIỂM|THANG PHÂN LOẠI|PHÂN LOẠI (HỌC SINH|HỌC VIÊN|KẾT QUẢ)|(SCORE|MARKING|BAND)\s+(SCALE|BANDS?))/i],
 };
-const TB_NUM = /^(?:(?:Phần|Mục|Part|Section)\s+)?(?:(?:\d+|[IVX]{1,4})(?:\.\d+)*[.):]?\s+|(?:\d+\.)+\d*\s*)?/i;
+const TB_NUM = /^(?:(?:Phần|Mục|Part|Section)\s+)?(?:(?:\d+[a-z]?|[IVX]{1,4})(?:\.\d+)*[.):]?\s+|(?:\d+\.)+\d*\s*)?/i;
 function tbSection_(paras, kind) {
   const P = paras.map(p => String(p).normalize('NFC').replace(/\s+/g, ' ').trim());
   const heads = P.map(p => (p.length <= 90 ? p.replace(TB_NUM, '') : ''));
@@ -3133,7 +3191,8 @@ function parseExplanations_(paras) {
   const st = tbSection_(paras, 'expl');
   if (st < 0) return out;
   const LABEL = /^(Câu hỏi|B\d\s*[–—-].{1,30}|Bước\s*\d.{0,30}|Keywords?|Paraphrase|Vị trí|Dẫn chứng|Script|Transcript|Giải thích|Chốt đáp án|Bẫy.{0,30}|Lưu ý|Mẹo)$/i;
-  let cur = null, label = null, grp = null;
+  let cur = null, label = null, grp = null, tbl = null;
+  const clean = x => String(x).replace(/\s+/g, ' ').trim();
   // Dạng "Questions 1–2: … → C, D" + bảng từng phương án (A | nội dung | ✓/✗ | phân tích | signpost)
   const flushGroup = () => {
     if (!grp) return;
@@ -3160,9 +3219,34 @@ function parseExplanations_(paras) {
     const p = String(paras[i]).replace(/\s+/g, ' ').trim();
     if (!p) continue;
     if (/^\d+\.(\d+\.?)*\s+\S/.test(p)) break; // mục tiếp theo của Teacher's Book (VD "4. Độ khó…")
-    if (/^(READING\s+)?PASSAGE\s+\d|^SECTION\s+\d|^PART\s+\d/i.test(p)) { flushGroup(); cur = null; label = null; continue; }
+    if (/^(READING\s+)?PASSAGE\s+\d|^SECTION\s+\d|^PART\s+\d/i.test(p)) { flushGroup(); cur = null; label = null; tbl = null; continue; }
     const gq = p.match(/^Questions?\s+(\d{1,2})\s*(?:[–—-]|and|to)\s*(\d{1,2})\s*[:.]?\s*(.*?)\s*(?:→|->)\s*([A-L](?:\s*[,&]\s*[A-L])+)\s*$/i);
     if (gq) { flushGroup(); grp = { a: Number(gq[1]), b: Number(gq[2]), q: gq[3], ans: gq[4], opts: [] }; cur = null; label = null; continue; }
+    // Dạng bảng: Câu | Đáp án chấp nhận | Bằng chứng trong audio | Bẫy / lưu ý | Mức độ (mỗi hàng 1 câu)
+    if (/^(Câu|Question|Q|No\.?)$/i.test(p)) {
+      const hdr = [p];
+      let j = i + 1;
+      while (j < paras.length && hdr.length < 8) {
+        const h = clean(paras[j]);
+        if (!h || /^\d{1,2}$/.test(h) || h.length > 40 || /[.:;!?]$/.test(h)) break;
+        hdr.push(h); j++;
+      }
+      if (hdr.length >= 3 && j < paras.length && /^\d{1,2}$/.test(clean(paras[j]))) {
+        flushGroup(); tbl = hdr; cur = null; label = null; i = j - 1; continue;
+      }
+    }
+    if (tbl && /^\d{1,2}$/.test(p)) {
+      const x = out[p] = out[p] || { lines: [], level: '', p: '', d: '', err: '' };
+      for (let c = 1; c < tbl.length && i + 1 < paras.length; c++) {
+        const h = tbl[c], v = clean(paras[++i]);
+        if (!v) continue;
+        if (/^(Mức độ|Độ khó|Level|Difficulty)$/i.test(h)) { x.level = v; continue; }
+        if (/chấp nhận|accept/i.test(h)) x.accept = v;
+        if (/^(Đáp án|Answers?)$/i.test(h) || /^\(?\s*(xem câu trên|see above)/i.test(v)) continue;
+        x.lines.push(h + ': ' + v);
+      }
+      continue;
+    }
     if (grp) {
       if (/^[A-L]$/.test(p)) grp.opts.push({ L: p, cells: [] });
       else if (!/^(Phương án|KQ|Kết quả|Phân tích|Signpost|Tín hiệu|Options?)$/i.test(p) && grp.opts.length) grp.opts[grp.opts.length - 1].cells.push(p);
