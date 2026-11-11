@@ -351,6 +351,100 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(gs.matchAnswer_('B', gs.normalizeKeyText_('B (climate change)'))).toBe(true);
   });
 
+  it('drops Vietnamese teacher notes from answer cells and splits "·" alternatives', () => {
+    const gs = load();
+    expect(gs.normalizeKeyText_('three · 3 · three times')).toBe('three|3|three times');
+    expect(gs.normalizeKeyText_('Saturday (viết hoa hay thường đều được; sai: Thursday)')).toBe(
+      'Saturday',
+    );
+    expect(
+      gs.normalizeKeyText_('Hollis (phải đúng chính tả H-O-L-L-I-S; Marcus Hollis cũng chấp nhận)'),
+    ).toBe('Hollis|Marcus Hollis');
+    expect(gs.normalizeKeyText_('normal routine · routine (tuỳ GV) · sai: baseline')).toBe(
+      'normal routine',
+    );
+    expect(
+      gs.normalizeKeyText_('pressure (sai: heart rate / blood pressure – vượt ONE WORD)'),
+    ).toBe('pressure');
+    expect(gs.normalizeKeyText_('(a) water bottle')).toBe('(a) water bottle');
+  });
+
+  it('splits "A, B theo thứ tự bất kỳ" + "(xem câu trên)" into one letter per question', () => {
+    const gs = load();
+    const k = gs.spreadChoiceKeys_({
+      6: 'Hollis',
+      7: 'A, B theo thứ tự bất kỳ',
+      8: '(xem câu trên)',
+      9: 'C & E (in any order)',
+      10: '',
+      11: 'D',
+    });
+    expect(k).toEqual({ 6: 'Hollis', 7: 'A', 8: 'B', 9: 'C', 10: 'E', 11: 'D' });
+  });
+
+  it('reads a Listening teacher book with a "2b. Giải thích chi tiết" table (L teacher.docx)', () => {
+    const gs = load();
+    const row = (n: number, acc: string, ev: string, trap: string, lv: string) => [
+      String(n),
+      acc,
+      ev,
+      trap,
+      lv,
+    ];
+    const paras = [
+      '2. Đáp án',
+      'Câu',
+      'Section 1',
+      'Câu',
+      'Section 2',
+      '1',
+      'three times / 3 times',
+      '11',
+      'pressure',
+      '2',
+      'Saturday',
+      '12',
+      'A',
+      'Quy đổi band tham khảo:',
+      '39–40',
+      '9.0',
+      '2b. Giải thích chi tiết từng câu',
+      'Cột Bằng chứng trích nguyên câu trong audio.',
+      'SECTION 1 (Questions 1–10)',
+      'Câu',
+      'Đáp án chấp nhận',
+      'Bằng chứng trong audio',
+      'Bẫy / lưu ý',
+      'Mức độ',
+      ...row(1, 'three · 3 · three times', '“…three times a week.”', 'twice = cũ', 'Dễ'),
+      ...row(2, 'Saturday (sai: Thursday)', '“…on Saturday morning.”', 'Thursday full', 'Dễ'),
+      'SECTION 2 (Questions 11–20)',
+      'Câu',
+      'Đáp án chấp nhận',
+      'Bằng chứng trong audio',
+      'Bẫy / lưu ý',
+      'Mức độ',
+      ...row(11, 'pressure (sai: heart rate)', '“…blood pressure.”', 'ONE WORD', 'Khó'),
+      ...row(12, 'A, D theo thứ tự bất kỳ', 'A: “…”', 'B bị phủ định', 'Trung bình'),
+      '3. Hướng dẫn tạo audio',
+    ];
+    // The answer table stops at "2b.": the explanation table does not overwrite it
+    expect(gs.parseKeyTable_(paras)).toEqual({
+      1: 'three times|3 times',
+      2: 'Saturday',
+      11: 'pressure',
+      12: 'A',
+    });
+    expect(gs.tbSection_(paras, 'expl')).toBe(16);
+    const ex = gs.parseExplanations_(paras);
+    expect(Object.keys(ex).sort()).toEqual(['1', '11', '12', '2']);
+    expect(ex[1].level).toBe('Dễ');
+    expect(ex[1].accept).toBe('three · 3 · three times');
+    expect(ex[1].text).toContain('Bằng chứng trong audio: “…three times a week.”');
+    expect(ex[11].text).toContain('Bẫy / lưu ý: ONE WORD');
+    expect(ex[11].level).toBe('Khó');
+  });
+
   it('reads the essay under "TASK 2 Answer" even without the dash (Phong, K230)', () => {
     const gs = load();
     // Paragraphs of "Phong Chu - Writing.docx": the student's line has no dash, the template's
