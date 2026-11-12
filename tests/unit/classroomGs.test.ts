@@ -541,19 +541,61 @@ describe('class system code (classroom/Code.gs)', () => {
       ),
       row('Bỏ qua: HS chưa viết Task 2 (phần dưới dòng "TASK 2 – Answer" trống)', 'sent'),
       row('Đã chấm'),
+      row('Lỗi: AI không trả kết quả'),
     ];
     gs.readTable_ = () => ({
       rows,
       sh: { getRange: (i: number) => ({ setValues: (v: unknown[][]) => cells.push([i, v[0]]) }) },
     });
     expect(gs.recheckWritingSkips_()).toBe(
-      'Chấm lại 2 bài Writing trước đó không đọc được phần bài làm',
+      'Chấm lại 2 bài Writing trước đó không đọc được phần bài làm | Chấm lại 1 bài trước đó bị lỗi "AI không trả kết quả"',
     );
     expect(cells).toEqual([
       [2, ['Chờ chấm', '']],
       [3, ['Chờ chấm', '']],
+      [6, ['Chờ chấm', '']],
     ]);
     expect(gs.recheckWritingSkips_()).toBe(''); // once per version
+  });
+
+  it('tries another Gemini model when one answers with no text, then waits instead of failing', () => {
+    const models: string[] = [];
+    let blank = 2;
+    const gs = load({
+      PropertiesService: {
+        getScriptProperties: () => ({
+          getProperty: (k: string) => (k === 'GEMINI_API_KEY' ? 'k' : null),
+          deleteProperty: () => undefined,
+        }),
+      },
+      UrlFetchApp: {
+        fetch: (url: string) => {
+          models.push(decodeURIComponent(url.split('/models/')[1].split(':')[0]));
+          const cand =
+            blank-- > 0
+              ? { finishReason: 'OTHER', content: { parts: [] } }
+              : { content: { parts: [{ text: '{"overall_band":6}' }] } };
+          return {
+            getResponseCode: () => 200,
+            getContentText: () => JSON.stringify({ candidates: [cand] }),
+          };
+        },
+      },
+    });
+    gs.callBackupAi_ = () => undefined;
+    expect(gs.callGemini_([{ text: 'x' }], { model: 'gemini-flash-latest' })).toEqual({
+      overall_band: 6,
+    });
+    expect(models).toEqual(['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-flash-lite-latest']);
+    // Every model blank: a waiting error, not a permanent one
+    blank = 99;
+    expect(() => gs.callGemini_([{ text: 'x' }], { model: 'gemini-flash-latest' })).toThrow(
+      /AI không trả kết quả \(dừng: OTHER\), sẽ chấm lại lần sau/,
+    );
+    expect(
+      gs.aiEmptyTries_('Chờ: AI không trả kết quả (dừng: OTHER), sẽ chấm lại lần sau [lần 2/3]'),
+    ).toBe(2);
+    expect(gs.aiEmptyTries_('Chờ: Gemini quá tải, sẽ chấm lại lần sau')).toBe(0);
   });
 
   it('keeps the 8 newest backups of each kind', () => {
