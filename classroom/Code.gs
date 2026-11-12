@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-11.1';
+const CLASSROOM_VERSION = '2026-11-12.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -148,6 +148,12 @@ class QuotaError extends Error {}
 /** Gemini quá tải (503/500) sau khi đã thử model dự phòng: chờ lần chạy sau, không dừng cả lượt chấm. */
 class OverloadError extends Error {}
 class TransientError extends Error {}
+/**
+ * AI trả lời rỗng (không có nội dung, VD bị chặn hoặc dừng giữa chừng): thử lại ở các lần chạy sau,
+ * tối đa AI_EMPTY_MAX_ lần rồi mới báo "Lỗi … cần kiểm tra tay".
+ */
+class AiEmptyError extends TransientError {}
+const AI_EMPTY_MAX_ = 3;
 
 // ---------------------------------------------------------------------------
 // MENU
@@ -1033,10 +1039,17 @@ function gradeAll_(opts) {
         writeGrade_(subT, i, { status: 'Chờ: Gemini quá tải, sẽ chấm lại lần sau' });
         continue;
       }
-      if (e instanceof TransientError) { writeGrade_(subT, i, { status: 'Chờ: ' + String(e.message).slice(0, 200) }); continue; }
+      if (e instanceof AiEmptyError) {
+        // Đếm số lần AI trả lời rỗng cho bài này; quá AI_EMPTY_MAX_ lần thì báo GV kiểm tra tay
+        const tries = aiEmptyTries_(r[S['Trạng thái chấm']]) + 1;
+        if (tries < AI_EMPTY_MAX_) {
+          writeGrade_(subT, i, { status: 'Chờ: ' + String(e.message).slice(0, 180) + ' [lần ' + tries + '/' + AI_EMPTY_MAX_ + ']' });
+          continue;
+        }
+      } else if (e instanceof TransientError) { writeGrade_(subT, i, { status: 'Chờ: ' + String(e.message).slice(0, 200) }); continue; }
       nErr++;
-      result = { status: 'Lỗi: ' + String(e.message).slice(0, 200), stamp: true };
-      if (!(e instanceof PermanentError)) log_('Lỗi chấm ' + r[S['Học sinh']] + ' - ' + r[S['Bài tập']], e.stack || e.message);
+      result = { status: 'Lỗi: ' + String(e.message).replace(/, sẽ chấm lại lần sau$/, ' sau ' + AI_EMPTY_MAX_ + ' lần thử').slice(0, 200), stamp: true };
+      if (!(e instanceof PermanentError) && !(e instanceof AiEmptyError)) log_('Lỗi chấm ' + r[S['Học sinh']] + ' - ' + r[S['Bài tập']], e.stack || e.message);
     }
     if (result.skip) continue; // chưa có gì để chấm (không ghi gì)
     writeGrade_(subT, i, result);
@@ -1845,7 +1858,7 @@ function callGemini_(parts, cfg) {
     generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
   };
   const models = geminiModels_(cfg.model);
-  let last = '', overloaded = false, badJson = false;
+  let last = '', overloaded = false, badJson = false, empty = '';
   for (let mi = 0; mi < models.length; mi++) {
     if (GEMINI_SKIP_[models[mi]]) continue;
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(models[mi]) + ':generateContent';
@@ -1861,7 +1874,13 @@ function callGemini_(parts, cfg) {
         const cand = data.candidates && data.candidates[0];
         const text = cand && cand.content && cand.content.parts
           ? cand.content.parts.filter(p => p.text && !p.thought).map(p => p.text).join('') : '';
-        if (!text) throw new PermanentError('AI không trả kết quả' + (data.promptFeedback ? ' (' + JSON.stringify(data.promptFeedback) + ')' : ''));
+        if (!text) {
+          // Câu trả lời rỗng (bị chặn, dừng giữa chừng…): thường chỉ xảy ra với 1 model, thử model khác
+          empty = aiEmptyReason_(data, cand);
+          last = 'Gemini (' + models[mi] + ') không trả nội dung: ' + empty;
+          console.log(last + ' ' + body.slice(0, 500));
+          break;
+        }
         try { PropertiesService.getScriptProperties().deleteProperty('AI_DOWN_SINCE'); } catch (e) { /* bỏ qua */ }
         const parsed = tryParseJson_(text);
         if (parsed !== undefined) return parsed;
@@ -1885,6 +1904,7 @@ function callGemini_(parts, cfg) {
   const viaMistral = callBackupAi_(parts);
   if (viaMistral !== undefined) return viaMistral;
   if (badJson && !overloaded) throw new TransientError('AI trả lời sai định dạng, sẽ chấm lại lần sau');
+  if (empty && !overloaded) throw new AiEmptyError('AI không trả kết quả (' + empty + '), sẽ chấm lại lần sau');
   if (!overloaded) {
     GEMINI_QUOTA_ = true;
     throw new QuotaError('Các model Gemini đều hết lượt miễn phí hoặc không dùng được (' + models.join(', ') + '). ' + last.slice(0, 200));
@@ -1895,6 +1915,15 @@ function callGemini_(parts, cfg) {
     if (!p.getProperty('AI_DOWN_SINCE')) p.setProperty('AI_DOWN_SINCE', new Date().toISOString());
   } catch (e) { /* bỏ qua */ }
   throw new OverloadError('Gemini quá tải (đã thử ' + models.filter(m => GEMINI_SKIP_[m] !== 404).join(', ') + ') — sẽ thử lại sau 20 phút. ' + last.slice(0, 200));
+}
+
+/** Lý do Gemini trả lời rỗng, bằng tiếng Việt: "bị chặn: SAFETY", "dừng: MAX_TOKENS"… */
+function aiEmptyReason_(data, cand) {
+  const pf = data && data.promptFeedback;
+  if (pf && pf.blockReason) return 'bị chặn: ' + pf.blockReason;
+  if (!cand) return 'không có câu trả lời';
+  if (cand.finishReason && cand.finishReason !== 'STOP') return 'dừng: ' + cand.finishReason;
+  return 'câu trả lời trống';
 }
 
 /** Gemini quá tải: hẹn 1 lượt chấm lại sau 20 phút (không đợi lượt chạy mỗi giờ). */
@@ -5646,20 +5675,31 @@ function portalApproveMany_(p) {
  * (VD HS sửa dòng "TASK 2 – Answer" thành "TASK 2 Answer") được chấm lại — cách đọc file có thể đã tốt hơn.
  * Bài vẫn trống thì lần chấm sau lại ghi "Bỏ qua" như cũ.
  */
+/** Số lần AI đã trả lời rỗng, đọc từ trạng thái "Chờ: AI không trả kết quả … [lần 2/3]". */
+function aiEmptyTries_(status) {
+  const m = String(status || '').match(/^Chờ: AI không trả kết quả.*\[lần (\d+)\/\d+\]$/);
+  return m ? Number(m[1]) : 0;
+}
+
 function recheckWritingSkips_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('WRITING_RECHECK_VER') === CLASSROOM_VERSION) return '';
   const t = readTable_(SH.SUB, SUB_HEADERS);
-  let n = 0;
+  let n = 0, nAi = 0;
   t.rows.forEach((r, i) => {
     if (r[S['Đã gửi lúc']]) return;
-    if (/^Bỏ qua: HS chưa viết Task|^Lỗi: không thấy dòng "TASK/.test(String(r[S['Trạng thái chấm']] || ''))) {
+    const st = String(r[S['Trạng thái chấm']] || '');
+    const writing = /^Bỏ qua: HS chưa viết Task|^Lỗi: không thấy dòng "TASK/.test(st);
+    // Bài lỗi "AI không trả kết quả" (bản cũ báo lỗi ngay từ lần đầu): cho chấm lại
+    const aiEmpty = /^Lỗi: AI không trả kết quả$|^Lỗi: AI không trả kết quả \(\{/.test(st);
+    if (writing || aiEmpty) {
       t.sh.getRange(i + 2, S['Trạng thái chấm'] + 1, 1, 2).setValues([['Chờ chấm', '']]);
-      n++;
+      if (writing) n++; else nAi++;
     }
   });
   props.setProperty('WRITING_RECHECK_VER', CLASSROOM_VERSION);
-  return n ? 'Chấm lại ' + n + ' bài Writing trước đó không đọc được phần bài làm' : '';
+  return [n ? 'Chấm lại ' + n + ' bài Writing trước đó không đọc được phần bài làm' : '',
+    nAi ? 'Chấm lại ' + nAi + ' bài trước đó bị lỗi "AI không trả kết quả"' : ''].filter(String).join(' | ');
 }
 
 function portalRegrade_(p) {
