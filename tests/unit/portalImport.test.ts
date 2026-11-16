@@ -270,3 +270,73 @@ describe('classes created from IELTS Harper Portal', () => {
     );
   });
 });
+
+describe('Writing Task 1 + Task 2 from one Classroom homework', () => {
+  it('holds the first result and sends one email with both tasks and the overall band', () => {
+    const { app, admin, base } = setup();
+    const t1 = app.call(
+      'portal.essays.import',
+      base({
+        submissionId: 'cr-SUB123#Writing Task 1-1794000000',
+        taskType: 'task1_academic',
+        topicId: undefined,
+        essayType: undefined,
+        diagramType: 'dynamic',
+        image: { base64: PNG, mimeType: 'image/png', name: 'chart.png' },
+      }),
+    ).essayId;
+    const t2 = app.call(
+      'portal.essays.import',
+      base({ submissionId: 'cr-SUB123#Writing Task 2-1794000000' }),
+    ).essayId;
+    const config = app.call('config.get');
+    const score = (essayId: string, b: number, extra: Record<string, unknown> = {}) =>
+      app.call(
+        'admin.saveScore',
+        {
+          essayId,
+          scores: { task: b, coherence: b, lexical: b, grammar: b },
+          feedback: { task: 'a', coherence: 'b', lexical: 'c', grammar: 'd' },
+          generalComment: 'Good work.',
+          errors: [],
+          rewrite: { required: false, dueDate: '', note: '' },
+          submit: true,
+          notifyAgain: false,
+          requestId: `req-${essayId}`,
+          ...extra,
+        },
+        admin,
+      );
+
+    expect(app.call('admin.essay', { id: t1 }, admin).writingPair).toMatchObject({
+      id: t2,
+      status: 'pending',
+      overall: null,
+    });
+    const before = app.svc.mail.outbox.length;
+    expect(score(t1, 6, { diagramType: 'dynamic' })).toMatchObject({ email: 'held' });
+    expect(app.svc.mail.outbox.length).toBe(before);
+
+    const topicId = config.topics.find((t: any) => t.label === 'Transport').id;
+    expect(score(t2, 7, { topicId, essayType: 'discussion' })).toMatchObject({ email: 'sent' });
+    const mails = app.svc.mail.outbox.slice(before);
+    expect(mails).toHaveLength(1);
+    // (6 + 2 × 7) / 3 = 6.67 → 6.5
+    expect(mails[0].subject).toBe('Your score: IELTS Writing Task 1 + Task 2 – Band 6.5');
+    expect(mails[0].text).toContain('Overall Writing band (Task 2 counts double): 6.5');
+    const sent = (id: string) =>
+      app.db().find('EmailEvents', (e) => e.essay_id === id && e.status === 'sent');
+    expect(sent(t1)).toHaveLength(1);
+    expect(sent(t1)[0].error).toBe(`sent together with ${t2}`);
+    expect(sent(t2)).toHaveLength(1);
+  });
+
+  it('sends the normal email for an essay without a second task', () => {
+    const { app, admin, base } = setup();
+    const t2 = app.call(
+      'portal.essays.import',
+      base({ submissionId: 'cr-SUB999#Writing Task 2-1794000000' }),
+    ).essayId;
+    expect(app.call('admin.essay', { id: t2 }, admin).writingPair).toBeNull();
+  });
+});

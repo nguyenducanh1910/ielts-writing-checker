@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidBand, overallBand, roundBand } from '../../shared/band';
+import { isValidBand, overallBand, roundBand, writingOverall } from '../../shared/band';
 
 describe('band rounding (acceptance check)', () => {
   it.each([
@@ -40,5 +40,19 @@ describe('band rounding (acceptance check)', () => {
     expect(isValidBand(-0.5)).toBe(false);
     expect(isValidBand('6')).toBe(false);
     expect(isValidBand(NaN)).toBe(false);
+  });
+});
+
+describe('overall Writing band (Task 2 counts double)', () => {
+  it.each([
+    [6, 7, 6.5],
+    [7, 7, 7],
+    [5, 6, 5.5],
+    [8, 6, 6.5],
+  ])('Task 1 %s, Task 2 %s → %s', (t1, t2, expected) => {
+    expect(writingOverall(t1, t2)).toBe(expected);
+  });
+  it('needs valid bands', () => {
+    expect(() => writingOverall(6.3, 7)).toThrow();
   });
 });

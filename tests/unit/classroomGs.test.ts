@@ -40,7 +40,7 @@ function load(globals: Sandbox = {}): Sandbox {
   // Top-level `const`/`let` are not properties of the sandbox: expose what the tests use.
   vm.runInContext(
     `${SOURCE}
-;this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES, RUNTIME_WARN_MIN, S,
+;this.AiEmptyErrorForTest = AiEmptyError; this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES, RUNTIME_WARN_MIN, S,
   setProvider: (p) => { AI_PROVIDER_ = p; }, provider: () => AI_PROVIDER_ };`,
     ctx,
   );
@@ -749,5 +749,187 @@ describe('class system code (classroom/Code.gs)', () => {
       { sent: 0, waitQuota: 0 },
     );
     expect(formOpens).toBe(0);
+  });
+
+  it('writes grades in blocks of neighbouring rows', () => {
+    const gs = load();
+    const S = gs.__.S;
+    const writes: Array<[number, number]> = [];
+    const mk = () => new Array(30).fill('');
+    const t: any = {
+      rows: [mk(), mk(), mk(), mk(), mk()],
+      sh: {
+        getRange: (row: number, _c: number, n: number) => ({
+          setValues: (v: unknown[][]) => {
+            expect(v).toHaveLength(n);
+            writes.push([row, n]);
+          },
+        }),
+      },
+      gradeBuf: {},
+    };
+    gs.writeGrade_(t, 0, { status: 'Đã chấm' });
+    gs.writeGrade_(t, 1, { status: 'Đã chấm' });
+    gs.writeGrade_(t, 3, { status: 'Đã chấm' });
+    expect(writes).toEqual([]); // buffered
+    expect(gs.flushGrades_(t)).toBe(3);
+    expect(writes).toEqual([
+      [2, 2],
+      [5, 1],
+    ]);
+    expect(t.rows[3][S['Trạng thái chấm']]).toBe('Đã chấm');
+    expect(gs.flushGrades_(t)).toBe(0);
+  });
+
+  it('reports the slow steps of an automatic run', () => {
+    const gs = load();
+    gs.__now = 1000;
+    vm.runInContext('Date.now = () => this.__now;', gs); // the sandbox has its own Date
+    const tm = gs.stepTimer_();
+    tm('đồng bộ', () => {
+      gs.__now += 30000;
+    });
+    tm('chấm', () => {
+      gs.__now += 500;
+    });
+    expect(tm.report()).toBe('⏱ 31s (đồng bộ 30s)');
+  });
+
+  it('runs the full sync every 6 hours and at 2 a.m.', () => {
+    const props = memoryProps();
+    const gs = load({ PropertiesService: props.service });
+    expect(gs.deepSyncDue_(10)).toBe(true); // never ran
+    props.data.LAST_DEEP_SYNC_MS = String(Date.now() - 3600e3);
+    expect(gs.deepSyncDue_(10)).toBe(false);
+    expect(gs.deepSyncDue_(2)).toBe(true);
+    props.data.LAST_DEEP_SYNC_MS = String(Date.now() - 6 * 3600e3);
+    expect(gs.deepSyncDue_(10)).toBe(true);
+  });
+
+  it('marks AI grades close to the student usual band as safe to approve in bulk', () => {
+    const gs = load();
+    const S = gs.__.S;
+    const past = (email: string, band: number) => {
+      const r = new Array(30).fill('');
+      r[S['Email']] = email;
+      r[S['Kỹ năng']] = 'Speaking';
+      r[S['Band']] = band;
+      r[S['Đã gửi lúc']] = new Date();
+      return r;
+    };
+    const rows = [past('a@x', 5), past('a@x', 5.5), past('b@x', 6), past('b@x', 6), past('c@x', 6)];
+    const v = (email: string, band: string, summary = '') => ({
+      email,
+      skill: 'Speaking',
+      band,
+      summary,
+      gradeStatus: 'Đã chấm (AI) — chờ duyệt',
+    });
+    const views = [
+      v('a@x', '5.5'),
+      v('b@x', '7'),
+      v('c@x', '6'),
+      v('a@x', '5', '[Chấm từ bản chép lời …]'),
+    ];
+    gs.markConfident_(views, rows);
+    expect(views.map((x: any) => [x.usualBand, x.confident])).toEqual([
+      [5.3, true],
+      [6, false],
+      [undefined, undefined], // only 1 earlier result
+      [5.3, false], // graded from a transcript: always check by hand
+    ]);
+  });
+
+  it('flags answer keys that look wrong in the assignment preview', () => {
+    const gs = load();
+    const choice = { type: 'choice', options: ['A', 'B', 'C'] };
+    expect(gs.suspectKey_(choice, 'B')).toBe('');
+    expect(gs.suspectKey_(choice, 'A, B theo thứ tự bất kỳ')).toMatch(/Không có trong lựa chọn/);
+    expect(gs.suspectKey_({ type: 'text' }, 'Saturday (viết hoa)')).toMatch(/tiếng Việt/);
+    expect(gs.suspectKey_({ type: 'text' }, '')).toBe('Chưa có đáp án');
+    expect(gs.suspectKey_({ type: 'text' }, 'three times|3 times')).toBe('');
+  });
+
+  it('lists submissions waiting for a grade, oldest first', () => {
+    const gs = load();
+    const S = gs.__.S;
+    const row = (id: string, status: string, hoursAgo: number, sent = '') => {
+      const r = new Array(30).fill('');
+      r[S['Submission ID']] = id;
+      r[S['Trạng thái chấm']] = status;
+      r[S['Nộp lúc']] = new Date(Date.now() - hoursAgo * 3600e3);
+      r[S['Đã gửi lúc']] = sent;
+      return r;
+    };
+    const list = gs.waitingList_([
+      row('1', 'Chờ: Gemini quá tải, sẽ chấm lại lần sau', 30),
+      row('2', 'Chờ chấm', 2),
+      row('3', 'Đã chấm', 50),
+      row('4', 'Chờ chấm', 40, 'sent'),
+    ]);
+    expect(list.map((w: any) => [w.id, w.hours])).toEqual([
+      ['1', 30],
+      ['2', 2],
+    ]);
+  });
+
+  it('reads a Writing file with the prompts and answer lines interleaved', () => {
+    const gs = load();
+    const w = gs.parseWriting_([
+      'WRITING TASK 1',
+      'The chart below shows sales.',
+      'Write at least 150 words.',
+      'TASK 1 – Answer',
+      'The bar chart compares sales in four shops over a year and shows clear growth overall.',
+      'WRITING TASK 2',
+      'Some people think cities are better than villages.',
+      'Write at least 250 words.',
+      'TASK 2 – Answer',
+      'Many people move to cities because there are more jobs and better schools there.',
+    ]);
+    expect(w.task1Prompt).toBe('The chart below shows sales.');
+    expect(w.task2Prompt).toBe('Some people think cities are better than villages.');
+    expect(w.task1Answer).toMatch(/^The bar chart compares/);
+    expect(w.task1Answer).not.toMatch(/WRITING TASK 2|villages/);
+    expect(w.task2Answer).toMatch(/^Many people move/);
+  });
+
+  it('grades Speaking from a transcript when the AI cannot answer for the recording', () => {
+    const gs = load({
+      CacheService: { getScriptCache: () => ({ get: () => null, put: () => undefined }) },
+    });
+    const S = gs.__.S;
+    const calls: string[] = [];
+    gs.collectFileParts_ = () => ({
+      parts: [{ inline_data: { mime_type: 'audio/mp4', data: 'x' } }],
+      notes: [],
+    });
+    gs.getTaskParts_ = () => ({ parts: [{ text: 'Describe a place.' }] });
+    gs.speakingCalibration_ = () => '';
+    gs.writeFeedbackDoc_ = () => 'doc';
+    gs.recordSpeakingAi_ = () => undefined;
+    gs.looksVietnamese_ = () => true;
+    gs.callGemini_ = (parts: any[]) => {
+      const audio = parts.some((p) => p.inline_data);
+      const text = parts.map((p) => p.text || '').join(' ');
+      if (/Transcribe this IELTS Speaking/.test(text)) {
+        calls.push('transcribe');
+        return { transcript: 'I like my home town.' };
+      }
+      if (audio) {
+        calls.push('grade-audio');
+        throw new gs.AiEmptyErrorForTest('AI không trả kết quả (dừng: OTHER), sẽ chấm lại lần sau');
+      }
+      calls.push('grade-text');
+      expect(text).toContain('I like my home town.');
+      const c = { band: 5, comment: 'ok' };
+      return { criteria: { FC: c, LR: c, GRA: c, P: c }, summary: 'Tốt.' };
+    };
+    const r = new Array(30).fill('');
+    r[S['File IDs']] = 'f1';
+    const res = gs.gradeAI_(r, [], 'Speaking', { lang: 'Tiếng Việt' }, {});
+    expect(calls).toEqual(['grade-audio', 'transcribe', 'grade-text']);
+    expect(res.band).toBe(5);
+    expect(res.summary).toContain('Chấm từ bản chép lời');
   });
 });

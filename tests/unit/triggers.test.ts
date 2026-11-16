@@ -169,3 +169,44 @@ describe('assigned tests', () => {
     });
   });
 });
+
+describe('weekly report: how far Gemini is from the teacher', () => {
+  it('emails the teacher on Monday, once a week, when there are scored essays', () => {
+    const app = createTestApp();
+    const db = app.db();
+    const gem = db.findOne('FeedbackSources', (x) => x.name === 'Gemini')!;
+    for (let i = 0; i < 8; i++) {
+      const id = `past-${i}`;
+      db.insert('Essays', { id, status: 'scored', task_type: 'task2', scored_at: '2026-10-01' });
+      db.insert('Scores', {
+        essay_id: id,
+        criterion_1: 7,
+        criterion_2: 6.5,
+        criterion_3: 7,
+        criterion_4: 6,
+        overall: 6.5,
+      });
+      db.insert('SourceFeedback', {
+        id: `f-${i}`,
+        essay_id: id,
+        source_id: gem.id,
+        criterion_1: 7,
+        criterion_2: 6.5,
+        criterion_3: 7,
+        criterion_4: 6.5,
+      });
+    }
+    app.svc.cache.clear();
+    expect(runDailyJob(app.svc).aiReport).toBe('skipped'); // Saturday 10 Oct
+    app.svc.advance(2 * 86400000); // Monday
+    const before = app.svc.mail.outbox.length;
+    expect(runDailyJob(app.svc).aiReport).toBe('sent');
+    const mail = app.svc.mail.outbox
+      .slice(before)
+      .find((m) => m.subject.startsWith('Báo cáo tuần'));
+    expect(mail?.to).toBe('admin@example.com');
+    expect(mail?.text).toContain('Gemini cao hơn thầy 0.50 band');
+    expect(mail?.text).toContain('tự hiệu chỉnh');
+    expect(runDailyJob(app.svc).aiReport).toBe('skipped'); // once a week
+  });
+});
