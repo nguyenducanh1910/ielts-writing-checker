@@ -40,7 +40,7 @@ function load(globals: Sandbox = {}): Sandbox {
   // Top-level `const`/`let` are not properties of the sandbox: expose what the tests use.
   vm.runInContext(
     `${SOURCE}
-;this.AiEmptyErrorForTest = AiEmptyError; this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES, RUNTIME_WARN_MIN, S,
+;this.AiEmptyErrorForTest = AiEmptyError; this.__ = { STATUS, CLASSROOM_VERSION, QUICK_SYNC_MINUTES, RUNTIME_WARN_MIN, S, C,
   setProvider: (p) => { AI_PROVIDER_ = p; }, provider: () => AI_PROVIDER_ };`,
     ctx,
   );
@@ -749,6 +749,56 @@ describe('class system code (classroom/Code.gs)', () => {
       { sent: 0, waitQuota: 0 },
     );
     expect(formOpens).toBe(0);
+  });
+
+  it('opens old Google Forms only in the full run, not every hour', () => {
+    const gs = load();
+    const { S, C, STATUS } = gs.__;
+    const day = 86400e3;
+    const cwRow = (id: string, dueDaysAgo: number) => {
+      const w = new Array(40).fill('');
+      w[C['CourseWork ID']] = id;
+      w[C['Chấm tự động']] = true;
+      w[C['Kỹ năng']] = 'Reading (Academic)';
+      // a Date of the sandbox (the code checks `instanceof Date`)
+      w[C['Hạn nộp']] = vm.runInContext(`new Date(${Date.now() - dueDaysAgo * day})`, gs);
+      return w;
+    };
+    const sub = (cw: string, status: string, turned: boolean) => {
+      const r = new Array(40).fill('');
+      r[S['CourseWork ID']] = cw;
+      r[S['Kỹ năng']] = 'Reading (Academic)';
+      r[S['Trạng thái chấm']] = status;
+      r[S['Trạng thái']] = turned ? STATUS.ON_TIME : STATUS.MISSING;
+      r[S['Nộp lúc']] = turned ? new Date(Date.now() - 20 * day) : '';
+      return r;
+    };
+    const tables: Record<string, any> = {
+      cw: { rows: [cwRow('old', 20), cwRow('new', 1)] },
+      sub: {
+        rows: [
+          sub('old', 'Chờ: chưa thấy câu trả lời trên Form của HS này', true),
+          sub('old', '', false),
+          sub('new', '', false),
+        ],
+        sh: { getRange: () => ({ setValues: () => undefined }) },
+      },
+    };
+    gs.readTable_ = (name: string) => (/Nộp/.test(name) ? tables.sub : tables.cw);
+    gs.getConfig_ = () => ({ maxAi: 5, aiSleep: 0 });
+    gs.loadAnswerKeys_ = () => ({});
+    gs.loadBands_ = () => ({});
+    gs.rlSource_ = () => ({ formUrl: 'https://docs.google.com/forms/d/x/edit' });
+    const graded: string[] = [];
+    gs.gradeRL_ = (r: unknown[]) => {
+      graded.push(String(r[S['CourseWork ID']]));
+      return { skip: true };
+    };
+    gs.gradeAll_({ light: true });
+    expect(graded).toEqual(['new']);
+    graded.length = 0;
+    gs.gradeAll_({});
+    expect(graded).toEqual(['old', 'old', 'new']);
   });
 
   it('writes grades in blocks of neighbouring rows', () => {
