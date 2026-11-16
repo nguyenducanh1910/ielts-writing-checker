@@ -17,6 +17,27 @@ import { type EmailJob, type EmailType, parseEmailKey } from './email';
 import { resultEmail, rewriteReminderEmail } from './emailTemplates';
 import type { Row } from './schema';
 import { errorsView, practiceTasks, resultLocked, rewriteRequestFor, scoreView } from './views';
+import { pairOverall, resultSent, writingPartner } from './writingPair';
+
+/** The other Writing task of the same homework when it is scored (for a combined email). */
+export function pairForEmail(ctx: Ctx, essay: EssayRow, overall: number): ResultPair | null {
+  const other = writingPartner(ctx, essay);
+  if (!other || other.status !== 'scored' || resultLocked(other)) return null;
+  const score = scoreView(ctx, other.id);
+  if (!score) return null;
+  const taskType = other.task_type as TaskType;
+  return {
+    taskTypeLabel: TASK_TYPE_LABELS[taskType],
+    overall: score.overall,
+    criteria: CRITERIA.map((c) => ({
+      label: criterionLabel(c, taskType),
+      score: score.criteria[c] as number,
+    })),
+    url: appUrl(ctx, `/essays/${other.id}`),
+    writingOverall: pairOverall(essay, overall, score.overall),
+  };
+}
+type ResultPair = NonNullable<Parameters<typeof resultEmail>[0]['pair']>;
 
 /** Plain-text summary of Markdown feedback for the email (full feedback stays behind login). */
 export function summarize(markdownText: string, max = 400): string {
@@ -75,6 +96,12 @@ export function resultJob(
     userId: student.id,
     essayId: essay.id,
     to: student.email,
+    // Writing Task 1 + Task 2: this email also delivers the other task's result when it held back
+    alsoCovers: () => {
+      const current = ctx.db.byId('Essays', essay.id) ?? essay;
+      const other = writingPartner(ctx, current);
+      return other && other.status === 'scored' && !resultSent(ctx, other.id) ? [other.id] : [];
+    },
     build: () => {
       const score = scoreView(ctx, essay.id);
       if (!score) throw new Error('This essay has no score');
@@ -82,6 +109,7 @@ export function resultJob(
       // A queued email may go out later: use the essay as it is now.
       const current = ctx.db.byId('Essays', essay.id) ?? essay;
       return resultMessage(ctx, essay, student, {
+        pair: resultLocked(current) ? null : pairForEmail(ctx, current, score.overall as number),
         practiceTasks: resultLocked(current) ? practiceTasks(ctx, current).length : 0,
         criteria: score.criteria,
         overall: score.overall,
@@ -166,6 +194,8 @@ export function resultMessage(
     resent: boolean;
     /** More than 0: the result is locked until the student does this many practice tasks. */
     practiceTasks: number;
+    /** Writing Task 1 + Task 2 of the same homework: the other task's result, for one email. */
+    pair?: ResultPair | null;
   },
 ) {
   const taskType = essay.task_type as TaskType;
@@ -186,5 +216,6 @@ export function resultMessage(
     rewriteDue: data.rewriteDueAt ? formatForEmail(ctx, data.rewriteDueAt, student.timezone) : null,
     url: appUrl(ctx, `/essays/${essay.id}`),
     resent: data.resent,
+    pair: data.pair ?? null,
   });
 }

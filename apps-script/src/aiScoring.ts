@@ -17,6 +17,8 @@ import {
   type AiUsage,
   buildGeminiReconcilePrompt,
   buildSystemPrompt,
+  CALIBRATE_MIN_BIAS,
+  CALIBRATE_MIN_SAMPLES,
   calibrateScores,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_SAMPLES_PER_PROMPT,
@@ -41,14 +43,24 @@ import {
 } from '../../shared/claude';
 import {
   CRITERIA,
+  criterionLabel,
   diagramTypeLabel,
   essayTypeLabel,
   TASK_TYPE_LABELS,
   type TaskType,
 } from '../../shared/constants';
 import { countWords } from '../../shared/wordCount';
+import { escapeHtml } from '../../shared/escape';
 import { activeSampleIds, calibrationFor } from './calibration';
-import { ApiError, createCtx, type Ctx, type EssayRow, num, parseJson } from './context';
+import {
+  adminTimezone,
+  ApiError,
+  createCtx,
+  type Ctx,
+  type EssayRow,
+  num,
+  parseJson,
+} from './context';
 import { MAX_CELL } from './db';
 import { recurringErrors } from './handlers/admin';
 import { categoryExport, formatSamples } from './handlers/claudeSetup';
@@ -676,6 +688,56 @@ function geminiAccuracy(ctx: Ctx) {
       };
     })
     .filter((a) => a.samples > 0);
+}
+
+/**
+ * Monday report to the teacher: per task type, how far Gemini's scores were from the teacher's
+ * final scores (+ = Gemini higher) and whether drafts are adjusted automatically yet. Sent once a
+ * week (setting ai_report_week); nothing is sent before any essay has both scores.
+ */
+export function weeklyAiReport(ctx: Ctx): 'sent' | 'skipped' {
+  const tz = adminTimezone(ctx);
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(
+    ctx.now,
+  );
+  const week = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(ctx.now);
+  if (weekday !== 'Mon' || setting(ctx, 'ai_report_week', '') === week) return 'skipped';
+  const rows = geminiAccuracy(ctx);
+  const admins = ctx.db.find('Users', (u) => u.role === 'admin' && Boolean(u.email));
+  if (!rows.length || !admins.length) return 'skipped';
+  const calibrate = aiConfig(ctx).calibrate;
+  const lines: string[] = [];
+  for (const r of rows) {
+    const auto = calibrate && r.samples >= CALIBRATE_MIN_SAMPLES;
+    lines.push(
+      `${r.label} — ${r.samples} bài có cả điểm Gemini và điểm thầy. ` +
+        (auto
+          ? 'Bản nháp đang được tự hiệu chỉnh theo độ lệch dưới đây.'
+          : `Cần ít nhất ${CALIBRATE_MIN_SAMPLES} bài để tự hiệu chỉnh${calibrate ? '' : ' (đang tắt trong Cài đặt AI)'}.`),
+    );
+    for (const c of CRITERIA) {
+      const b = (r.bias as Record<string, number | undefined>)[c];
+      if (typeof b !== 'number' || Number.isNaN(b)) continue;
+      const within = (r.within as Record<string, number | undefined>)[c];
+      const way =
+        Math.abs(b) < CALIBRATE_MIN_BIAS
+          ? 'sát điểm thầy'
+          : `Gemini ${b > 0 ? 'cao hơn' : 'thấp hơn'} thầy ${Math.abs(b).toFixed(2)} band`;
+      lines.push(
+        `  • ${criterionLabel(c, r.taskType)}: ${way}` +
+          (typeof within === 'number' ? ` (${Math.round(within * 100)}% bài lệch ≤ 0.5)` : ''),
+      );
+    }
+  }
+  const subject = 'Báo cáo tuần: Gemini chấm Writing lệch bao nhiêu so với thầy';
+  const html =
+    `<p>Độ lệch trung bình giữa điểm Gemini và điểm cuối cùng của thầy (dấu + là Gemini chấm cao hơn):</p><pre style="font-family:Arial,Helvetica,sans-serif;font-size:14px;white-space:pre-wrap">${escapeHtml(lines.join('\n'))}</pre>` +
+    '<p>Xem chi tiết ở trang Cài đặt AI trên web chấm Writing.</p>';
+  for (const a of admins) {
+    ctx.svc.mail.send({ to: a.email, subject, text: lines.join('\n'), html });
+  }
+  putSetting(ctx, 'ai_report_week', week);
+  return 'sent';
 }
 
 const MODEL_RE = /^[a-z0-9][a-z0-9.\-_]{2,60}$/;

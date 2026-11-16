@@ -16,7 +16,8 @@ export const EMAIL_TYPES = [
 export type EmailType = (typeof EMAIL_TYPES)[number];
 
 /** 'no_email': the student has no email address (added by the teacher), so nothing is sent. */
-export type SendOutcome = 'sent' | 'duplicate' | 'queued' | 'failed' | 'no_email';
+/** 'held': Writing Task 1/2 pair, the email waits and goes out with the other task's result. */
+export type SendOutcome = 'sent' | 'duplicate' | 'queued' | 'failed' | 'no_email' | 'held';
 
 export interface EmailJob {
   type: EmailType;
@@ -29,6 +30,30 @@ export interface EmailJob {
   /** Recipient address; empty for students the teacher added without an email. */
   to: string;
   build: () => MailMessage;
+  /** Other essays whose result this email also delivers (Writing Task 1 + Task 2 in one email). */
+  alsoCovers?: () => string[];
+}
+
+/** Record the essays an email delivered together with its own, so their result counts as sent. */
+function markCovered(ctx: Ctx, job: EmailJob): void {
+  if (!job.alsoCovers) return;
+  for (const id of job.alsoCovers()) {
+    const key = emailKey('result', id, '1');
+    if (ctx.db.findOne('EmailEvents', (e) => e.idempotency_key === key && e.status === 'sent'))
+      continue;
+    ctx.db.remove('EmailEvents', (e) => e.idempotency_key === key && e.status === 'queued');
+    ctx.db.insert('EmailEvents', {
+      id: ctx.svc.uuid(),
+      essay_id: id,
+      user_id: job.userId,
+      type: 'result',
+      idempotency_key: key,
+      status: 'sent',
+      error: `sent together with ${job.essayId ?? job.refId}`,
+      created_at: ctx.nowIso,
+      open_token: '',
+    });
+  }
 }
 
 export function emailKey(type: EmailType, refId: string, version: string): string {
@@ -108,9 +133,11 @@ export function sendEmail(ctx: Ctx, job: EmailJob): SendOutcome {
     return 'queued';
   }
   try {
+    const covers = job.alsoCovers?.() ?? [];
     const { message, token } = withOpenTracking(ctx, job.type, job.build());
     ctx.svc.mail.send(message);
     record(ctx, job, 'sent', '', token);
+    markCovered(ctx, { ...job, alsoCovers: () => covers });
     return 'sent';
   } catch (err) {
     record(ctx, job, 'failed', (err as Error).message);
@@ -155,10 +182,12 @@ export function processEmailQueue(
       const job = rebuild(event);
       if (!job) throw new Error('Nothing to send any more');
       if (!job.to) throw new Error('The student has no email address');
+      const covers = job.alsoCovers?.() ?? [];
       const { message, token } = withOpenTracking(ctx, job.type, job.build());
       ctx.svc.mail.send(message);
       openToken = token;
       sent++;
+      markCovered(ctx, { ...job, alsoCovers: () => covers });
     } catch (err) {
       status = 'failed';
       error = (err as Error).message.slice(0, 500);

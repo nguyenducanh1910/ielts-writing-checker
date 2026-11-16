@@ -78,6 +78,31 @@ export interface ResultEmailData {
   resent: boolean;
   /** More than 0: no score in the email; the student unlocks it with this many tasks. */
   practiceTasks: number;
+  /** The other Writing task of the same homework, already scored: one email for both. */
+  pair?: {
+    taskTypeLabel: string;
+    overall: number;
+    criteria: Array<{ label: string; score: number }>;
+    url: string;
+    /** Overall Writing band of both tasks (Task 2 counts double). */
+    writingOverall: number;
+  } | null;
+}
+
+function pairBlocks(d: ResultEmailData): string[] {
+  const pr = d.pair;
+  if (!pr) return [];
+  const rows = pr.criteria
+    .map(
+      (c) =>
+        `<tr><td style="padding:6px 8px;border-bottom:1px solid #e5e7eb">${e(c.label)}</td><td align="right" style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-weight:bold">${e(formatBand(c.score))}</td></tr>`,
+    )
+    .join('');
+  return [
+    `<h2 style="font-size:18px;margin:20px 0 8px">${e(pr.taskTypeLabel)} – Band ${e(formatBand(pr.overall))}</h2>`,
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 12px">${rows}</table>`,
+    `<p style="margin:0 0 12px"><a href="${e(pr.url)}" style="color:#2d6a4f">View the ${e(pr.taskTypeLabel)} feedback</a></p>`,
+  ];
 }
 
 /** Result email while the result is locked behind the error practice: no band, no errors. */
@@ -129,6 +154,47 @@ export function resultEmail(d: ResultEmailData): MailMessage {
   const rewrite = d.rewriteDue
     ? `<p style="margin:12px 0;padding:12px;background:#fef3c7;color:#78350f">Rewrite required by <strong>${e(d.rewriteDue)}</strong>.</p>`
     : '';
+  const pr = d.pair;
+  if (pr) {
+    return layout({
+      to: d.to,
+      subject: `${d.resent ? 'Updated score' : 'Your score'}: IELTS Writing Task 1 + Task 2 – Band ${formatBand(pr.writingOverall)}`,
+      preheader: `Overall Writing band ${formatBand(pr.writingOverall)} (Task 2 counts double).`,
+      heading: d.resent
+        ? 'Your Writing score was updated'
+        : 'Your Writing homework has been scored',
+      blocks: [
+        p(`Hi ${d.name},`),
+        p(`${d.topic} · ${d.modeLabel}`),
+        `<p style="margin:0 0 4px;font-size:28px;font-weight:bold;color:#2d6a4f">Overall Writing band ${e(formatBand(pr.writingOverall))}</p>`,
+        p('Task 1 and Task 2 together; Task 2 counts twice as much as Task 1.'),
+        `<h2 style="font-size:18px;margin:20px 0 8px">${e(d.taskTypeLabel)} – Band ${e(formatBand(d.overall))}</h2>`,
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 12px">${rows}</table>`,
+        d.summary ? p(d.summary) : '',
+        errors,
+        rewrite,
+        ...pairBlocks(d),
+        p('Your full feedback and highlighted essays are on the website.'),
+      ],
+      button: { label: `View ${d.taskTypeLabel} feedback`, url: d.url },
+      text: [
+        `Hi ${d.name},`,
+        '',
+        `Overall Writing band (Task 2 counts double): ${formatBand(pr.writingOverall)}`,
+        '',
+        `${d.taskTypeLabel}: ${formatBand(d.overall)}`,
+        ...d.criteria.map((c) => `  ${c.label}: ${formatBand(c.score)}`),
+        `${pr.taskTypeLabel}: ${formatBand(pr.overall)}`,
+        ...pr.criteria.map((c) => `  ${c.label}: ${formatBand(c.score)}`),
+        '',
+        d.summary,
+        '',
+        `${d.taskTypeLabel} feedback: ${d.url}`,
+        `${pr.taskTypeLabel} feedback: ${pr.url}`,
+        ...(d.rewriteDue ? ['', `Rewrite required by ${d.rewriteDue}.`] : []),
+      ],
+    });
+  }
   return layout({
     to: d.to,
     subject: `${d.resent ? 'Updated score' : 'Your score'}: ${d.taskTypeLabel} – Band ${formatBand(d.overall)}`,

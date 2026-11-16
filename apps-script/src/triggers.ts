@@ -4,6 +4,7 @@
 import { createCtx, type Ctx } from './context';
 import { clearDashboardCache } from './dashboardCache';
 import { processEmailQueue, sendEmail } from './email';
+import { weeklyAiReport } from './aiScoring';
 import { jobFromEvent, rewriteJob } from './emailJobs';
 import { finalizeSubmission } from './handlers/essays';
 import type { Services } from './services';
@@ -81,7 +82,14 @@ export function runDailyJob(svc: Services) {
   return withLock(svc, (ctx) => {
     const deadlines = rewriteDeadlines(ctx);
     const cleaned = housekeeping(ctx);
+    let aiReport: string;
+    try {
+      aiReport = weeklyAiReport(ctx);
+    } catch (err) {
+      aiReport = `failed: ${(err as Error).message}`;
+    }
     return {
+      aiReport,
       reminders: deadlines.reminders,
       overdue: deadlines.overdue,
       expiredTokens: cleaned.tokens,
