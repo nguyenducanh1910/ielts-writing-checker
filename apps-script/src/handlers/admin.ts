@@ -6,7 +6,9 @@ import {
   diagramTypeLabel,
   essayTypeLabel,
   LIMITS,
+  TASK_TYPE_LABELS,
   TASK_TYPES,
+  type TaskType,
 } from '../../../shared/constants';
 import { placeExcerpts } from '../../../shared/excerpt';
 import { PROMPT_KEY_RE, promptKey, promptLabel } from '../../../shared/promptKey';
@@ -20,6 +22,7 @@ import { archiveEssay } from '../drive';
 import type { ActionDef } from '../router';
 import type { Row } from '../schema';
 import { Reader } from '../validate';
+import { resultSent, writingPartner } from '../writingPair';
 import {
   errorsView,
   essayDetail,
@@ -207,6 +210,19 @@ function latestDraft(ctx: Ctx, essayId: string, kind: 'initial' | 'reconcile' | 
     : null;
 }
 
+function writingPairView(ctx: Ctx, essay: EssayRow) {
+  const other = writingPartner(ctx, essay);
+  if (!other) return null;
+  const score = other.status === 'scored' ? scoreView(ctx, other.id) : null;
+  return {
+    id: other.id,
+    taskTypeLabel: TASK_TYPE_LABELS[other.task_type as TaskType] ?? other.task_type,
+    status: other.status,
+    overall: score ? score.overall : null,
+    resultSent: resultSent(ctx, other.id),
+  };
+}
+
 function adminEssay(ctx: Ctx, payload: unknown) {
   const r = new Reader(payload);
   const id = r.id('id');
@@ -236,6 +252,8 @@ function adminEssay(ctx: Ctx, payload: unknown) {
       ? { id: student.id, name: student.name, email: student.email, className: classLabel }
       : null,
     assignment: assignment ? { id: assignment.id, title: assignment.title } : null,
+    /** Writing Task 1/2 handed in together on Classroom: the other task (one email for both). */
+    writingPair: writingPairView(ctx, essay),
     parent: parent
       ? {
           id: parent.id,

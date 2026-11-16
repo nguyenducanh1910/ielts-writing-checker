@@ -7,6 +7,8 @@ import {
   DIAGRAM_TYPE_IDS,
   ESSAY_TYPE_IDS,
   LIMITS,
+  TASK_TYPE_LABELS,
+  type TaskType,
 } from '../../../shared/constants';
 import { endOfDayUtc } from '../../../shared/dates';
 import { buildPracticeTasks } from '../../../shared/practice';
@@ -17,7 +19,8 @@ import { clearDashboardCache } from '../dashboardCache';
 import { MAX_CELL } from '../db';
 import { renameEssayFolder } from '../drive';
 import { processEmailQueue, type SendOutcome, sendEmail } from '../email';
-import { groupTopErrors, jobFromEvent, resultJob, resultMessage } from '../emailJobs';
+import { groupTopErrors, jobFromEvent, pairForEmail, resultJob, resultMessage } from '../emailJobs';
+import { writingPartner } from '../writingPair';
 import type { ActionDef } from '../router';
 import type { Row } from '../schema';
 import { Reader } from '../validate';
@@ -299,7 +302,12 @@ function saveScore(ctx: Ctx, payload: unknown) {
   let email: SendOutcome | 'none' = 'none';
   const fresh = loadEssay(ctx, essay.id);
   if (!wasScored) {
-    email = sendEmail(ctx, resultJob(ctx, fresh, 'result', '1'));
+    // Writing Task 1 + Task 2 of one homework: the first result waits, one email goes with the second
+    const partner = writingPartner(ctx, fresh);
+    email =
+      partner && partner.status !== 'scored'
+        ? 'held'
+        : sendEmail(ctx, resultJob(ctx, fresh, 'result', '1'));
   } else if (notifyAgain) {
     email = sendEmail(ctx, resultJob(ctx, fresh, 'result_resent', requestId));
   }
@@ -352,7 +360,10 @@ function previewResult(ctx: Ctx, payload: unknown) {
         essay.id,
       ).length
     : 0;
+  const partner = writingPartner(ctx, essay);
+  const held = !wasScored && Boolean(partner) && partner?.status !== 'scored';
   const message = resultMessage(ctx, { ...essay, ...categoryColumns(category) }, student, {
+    pair: practiceTasks ? null : pairForEmail(ctx, essay, overall),
     practiceTasks,
     criteria,
     overall,
@@ -372,8 +383,12 @@ function previewResult(ctx: Ctx, payload: unknown) {
     studentName: student.name,
     overall,
     rewriteDueAt,
-    /** 'send' | 'no_email' (student has no address) | 'none' (already scored, not notifying). */
-    delivery: !willEmail ? 'none' : student.email ? 'send' : 'no_email',
+    /**
+     * 'send' | 'no_email' (student has no address) | 'none' (already scored, not notifying) |
+     * 'held' (Writing Task 1/2 pair: goes out in one email when the other task is scored).
+     */
+    delivery: !willEmail ? 'none' : !student.email ? 'no_email' : held ? 'held' : 'send',
+    pairTask: partner ? TASK_TYPE_LABELS[partner.task_type as TaskType] : '',
     /** Tasks the student does before the result unlocks; 0 when it is not locked. */
     practiceTasks,
     subject: message.subject,
