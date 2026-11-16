@@ -866,6 +866,7 @@ describe('class system code (classroom/Code.gs)', () => {
       row('2', 'Chờ chấm', 2),
       row('3', 'Đã chấm', 50),
       row('4', 'Chờ chấm', 40, 'sent'),
+      row('5', 'Chờ: chưa thấy câu trả lời trên Form của HS này', 60), // the student's part
     ]);
     expect(list.map((w: any) => [w.id, w.hours])).toEqual([
       ['1', 30],
