@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-12.1';
+const CLASSROOM_VERSION = '2026-11-16.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -183,7 +183,7 @@ function onOpen() {
     .addToUi();
 }
 
-function menuSync() { runMenu_('Đồng bộ', () => { refreshCourses_(); return syncAll_(); }); }
+function menuSync() { runMenu_('Đồng bộ', () => { refreshCourses_(); return syncAll_({ deep: true }); }); }
 function menuGrade() { runMenu_('Chấm bài', () => [gradeAll_(), syncWritingScores_()].filter(String).join('\n')); }
 function menuSendFeedback() { runMenu_('Gửi nhận xét', () => sendApprovedFeedback_()); }
 function menuRemind() { runMenu_('Nhắc nhở', () => { syncAll_(); return sendReminders_(); }); }
@@ -215,6 +215,49 @@ const RUNTIME_WARN_MIN = 70; // từ mức này: báo thầy + tạm dừng lư�
 
 function runtimeKey_(d) { return 'RT_' + Utilities.formatDate(d || new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'); }
 function runtimeTodayMs_() { return Number(PropertiesService.getScriptProperties().getProperty(runtimeKey_()) || 0); }
+
+/** Số lượt gọi Gemini thành công hôm nay (khoá RT_yyyyMMdd_AI, tự xoá sau 7 ngày cùng số liệu thời gian chạy). */
+function countAiCall_() {
+  try {
+    const p = PropertiesService.getScriptProperties(), k = runtimeKey_() + '_AI';
+    p.setProperty(k, String(Number(p.getProperty(k) || 0) + 1));
+  } catch (e) { /* bỏ qua */ }
+}
+function noteAiProblem_(kind, msg) {
+  try { PropertiesService.getScriptProperties().setProperty('AI_LAST_PROBLEM', JSON.stringify({ at: new Date().toISOString(), kind, msg: String(msg).slice(0, 300) })); } catch (e) { /* bỏ qua */ }
+}
+
+/** Bài đang chờ chấm (AI chưa chấm được / chờ lượt sau), cũ nhất trước. stale = chờ quá 24 giờ. */
+const WAIT_STALE_HOURS = 24;
+function waitingList_(subs) {
+  const now = Date.now();
+  return subs.filter(r => r[S['Submission ID']] && !r[S['Đã gửi lúc']] && r[S['Nộp lúc']] && /^Chờ/.test(String(r[S['Trạng thái chấm']] || '')))
+    .map(r => {
+      const since = new Date(r[S['Nộp lúc']]).getTime();
+      return {
+        id: pStr_(r[S['Submission ID']]), student: pStr_(r[S['Học sinh']]), title: pStr_(r[S['Bài tập']]), skill: pStr_(r[S['Kỹ năng']]),
+        className: pStr_(r[S['Lớp']]), status: pStr_(r[S['Trạng thái chấm']]), since: isNaN(since) ? '' : new Date(since).toISOString(),
+        hours: isNaN(since) ? 0 : Math.floor((now - since) / 3600000),
+      };
+    })
+    .sort((a, b) => b.hours - a.hours);
+}
+
+/** Tình trạng AI cho trang Tổng quan. */
+function aiStatus_(subs) {
+  const props = PropertiesService.getScriptProperties();
+  let last = null;
+  try { last = JSON.parse(props.getProperty('AI_LAST_PROBLEM') || 'null'); } catch (e) { last = null; }
+  const waiting = waitingList_(subs);
+  return {
+    callsToday: Number(props.getProperty(runtimeKey_() + '_AI') || 0),
+    downSince: props.getProperty('AI_DOWN_SINCE') || '',
+    lastProblem: last,
+    waiting: waiting.length,
+    stale: waiting.filter(w => w.hours >= WAIT_STALE_HOURS).length,
+    waitingItems: waiting.slice(0, 15),
+  };
+}
 
 /** Chạy 1 lượt tự động và cộng thời gian chạy vào tổng của ngày. */
 function trackRun_(fn) {
@@ -372,20 +415,49 @@ function hourlyJob_() {
   }
   withLock_(() => {
     const formCache = {};
-    const n = safeStep_('Lớp mới', detectNewCourses_);
-    const a = syncAll_();
-    const h = safeStep_('HS mới', syncNewStudents_);
-    safeStep_('Mẫu Speaking', backfillSpeakingSamples_);
-    const bk = safeStep_('Sao lưu', () => backupJob_(false));
+    const tm = stepTimer_();
+    const deep = deepSyncDue_(hour);
+    const n = tm('lớp mới', () => safeStep_('Lớp mới', detectNewCourses_));
+    const a = tm('đồng bộ', () => syncAll_({ deep }));
+    if (deep) PropertiesService.getScriptProperties().setProperty('LAST_DEEP_SYNC_MS', String(Date.now()));
+    const h = tm('HS mới', () => safeStep_('HS mới', syncNewStudents_));
+    tm('mẫu Speaking', () => safeStep_('Mẫu Speaking', backfillSpeakingSamples_));
+    const bk = tm('sao lưu', () => safeStep_('Sao lưu', () => backupJob_(false)));
     if (bk) log_('Sao lưu', bk);
     const rc = safeStep_('Kiểm tra lại Writing', recheckWritingSkips_);
-    const b = gradeAll_({ formCache });
-    const w = syncWritingScores_();
-    const c = getConfig_().autoSend ? sendApprovedFeedback_() : '';
-    const d = rlAfterDeadline_({ formCache });
-    const p = getConfig_().penaltyOn ? fillPenaltySheets_(false, formCache).summary : '';
-    log_('Chạy tự động', [n, a, h, rc, b, w, c, d, p].filter(String).join(' | '));
+    const b = tm('chấm', () => gradeAll_({ formCache }));
+    const w = tm('điểm web Writing', () => syncWritingScores_());
+    const c = getConfig_().autoSend ? tm('gửi nhận xét', () => sendApprovedFeedback_()) : '';
+    const d = tm('kết quả R/L', () => rlAfterDeadline_({ formCache }));
+    const p = getConfig_().penaltyOn ? tm('file phạt', () => fillPenaltySheets_(false, formCache).summary) : '';
+    log_('Chạy tự động', [n, a, h, rc, b, w, c, d, p, tm.report()].filter(String).join(' | '));
   });
+}
+
+/**
+ * Lượt mỗi giờ chỉ lấy bài nộp của bài tập còn mở (hạn trong 7 ngày gần đây); bài cũ hơn được lấy
+ * ở lượt đầy đủ mỗi 6 giờ và lúc 2h sáng. Bài cũ hầu như không đổi nên tiết kiệm nhiều thời gian chạy.
+ */
+const DEEP_SYNC_HOURS = 6;
+function deepSyncDue_(hour) {
+  if (hour === 2) return true;
+  const last = Number(PropertiesService.getScriptProperties().getProperty('LAST_DEEP_SYNC_MS') || 0);
+  return !last || Date.now() - last >= DEEP_SYNC_HOURS * 3600000 - 5 * 60000;
+}
+
+/** Đo thời gian từng bước của 1 lượt chạy: tm('nhãn', fn); tm.report() -> "⏱ 48s (đồng bộ 30s, chấm 12s)". */
+function stepTimer_() {
+  const t0 = Date.now(), parts = [];
+  const tm = (label, fn) => {
+    const s0 = Date.now();
+    try { return fn(); } finally { parts.push([label, Date.now() - s0]); }
+  };
+  tm.report = () => {
+    const big = parts.filter(x => x[1] >= 2000).sort((a, b) => b[1] - a[1]);
+    return '⏱ ' + Math.round((Date.now() - t0) / 1000) + 's' +
+      (big.length ? ' (' + big.map(x => x[0] + ' ' + Math.round(x[1] / 1000) + 's').join(', ') + ')' : '');
+  };
+  return tm;
 }
 
 function dailyReminderJob() { return trackRun_(dailyReminderJob_); }
@@ -703,7 +775,10 @@ function oldWorkOff_(courses, cwT, sprops) {
   });
 }
 
-/** opts.activeOnly: chỉ bài tập đang mở (hạn nộp từ 3 ngày trước trở đi, hoặc giao trong 14 ngày nếu không có hạn) — dùng cho cập nhật nhanh 10 phút/lần. */
+/**
+ * opts.activeOnly: chỉ bài tập đang mở (hạn nộp từ 3 ngày trước trở đi, hoặc giao trong 14 ngày nếu không có hạn) — dùng cho cập nhật nhanh.
+ * opts.deep: lấy bài nộp của mọi bài tập. Không có (lượt mỗi giờ): bài tập hết hạn quá 7 ngày chỉ cập nhật thông tin bài, không lấy lại bài nộp.
+ */
 function syncAll_(opts) {
   opts = opts || {};
   ensureConfigRows_();
@@ -722,7 +797,7 @@ function syncAll_(opts) {
   const newCw = [], newSub = [];
   const since = Date.now() - cfg.days * 86400000;
   const now = new Date();
-  let nWork = 0, nSub = 0, nChanged = 0;
+  let nWork = 0, nSub = 0, nChanged = 0, nStale = 0;
 
   const courseSh = sheet_(SH.COURSES);
   const allCourseRows = readTable_(SH.COURSES, COURSE_HEADERS).rows;
@@ -791,6 +866,10 @@ function syncAll_(opts) {
       }
       const comps = componentsOf_(cwRow);
       if (comps.indexOf('Writing Task 2') >= 0 && !cwRow[C['Chủ đề Writing']]) cwRow[C['Chủ đề Writing']] = 'Other';
+
+      // Lượt mỗi giờ (không phải lượt đầy đủ): bài đã hết hạn lâu, đã có trong sheet thì không lấy lại bài nộp
+      const recent = due ? due.getTime() >= Date.now() - 7 * 86400000 : new Date(w.creationTime).getTime() >= Date.now() - 21 * 86400000;
+      if (!opts.activeOnly && !opts.deep && !recent && cwIdx[w.id] >= 0) { nStale++; return; }
 
       let cOn = 0, cLate = 0, cMiss = 0;
       const subs = listAll_(tok => Classroom.Courses.CourseWork.StudentSubmissions.list(course.id, w.id, { pageSize: 100, pageToken: tok }), 'studentSubmissions');
@@ -869,7 +948,7 @@ function syncAll_(opts) {
   if (!opts.activeOnly || newSub.length || newCw.length || nChanged) buildOverview_();
   try { PropertiesService.getScriptProperties().setProperty('LAST_SYNC_MS', String(Date.now())); } catch (e) { /* bỏ qua */ }
   return (opts.activeOnly ? 'Cập nhật nhanh ' : 'Đồng bộ ') + courses.length + ' lớp, ' + nWork + ' bài tập, ' + nSub + ' lượt nộp (' + newSub.length + ' mới' +
-    (nChanged ? ', ' + nChanged + ' đổi trạng thái' : '') + ').';
+    (nChanged ? ', ' + nChanged + ' đổi trạng thái' : '') + ')' + (nStale ? ', ' + nStale + ' bài cũ để lượt đầy đủ' : '') + '.';
 }
 
 function statusOf_(s, turnedAt, due, now) {
@@ -992,9 +1071,12 @@ function gradeAll_(opts) {
   const bands = loadBands_();
   const formCache = opts.formCache || {}, taskCache = {}, webCtx = {};
   let nRL = 0, nAI = 0, nWeb = 0, nErr = 0, stoppedByQuota = false, aiDown = false, nWait = 0;
-
+  subT.gradeBuf = {};
+  try {
   for (let i = 0; i < subT.rows.length; i++) {
     if (timeUp_()) break;
+    // Bài chấm bằng AI tốn thời gian và lượt gọi: ghi ngay các dòng đang chờ để không mất nếu lượt chạy bị ngắt
+    if (Object.keys(subT.gradeBuf).length >= 25) flushGrades_(subT);
     const r = subT.rows[i];
     const cw = cwById[String(r[S['CourseWork ID']])];
     if (!cw || cw[C['Chấm tự động']] !== true) continue;
@@ -1032,9 +1114,9 @@ function gradeAll_(opts) {
         if (!result.noAI) { nAI++; Utilities.sleep(cfg.aiSleep * 1000); }
       }
     } catch (e) {
-      if (e instanceof QuotaError) { if (!stoppedByQuota) log_('Hết hạn mức AI', e.message); stoppedByQuota = true; continue; }
+      if (e instanceof QuotaError) { if (!stoppedByQuota) { log_('Hết hạn mức AI', e.message); noteAiProblem_('Hết hạn mức', e.message); } stoppedByQuota = true; continue; }
       if (e instanceof OverloadError) {
-        if (!aiDown) log_('AI quá tải', e.message);
+        if (!aiDown) { log_('AI quá tải', e.message); noteAiProblem_('Quá tải', e.message); }
         aiDown = true; nWait++;
         writeGrade_(subT, i, { status: 'Chờ: Gemini quá tải, sẽ chấm lại lần sau' });
         continue;
@@ -1053,7 +1135,12 @@ function gradeAll_(opts) {
     }
     if (result.skip) continue; // chưa có gì để chấm (không ghi gì)
     writeGrade_(subT, i, result);
+    if (result.usedAI || (!result.noAI && !isRL)) flushGrades_(subT);
     if (result.resubmit) notifyResubmit_(r, cw, result.resubmit, cfg);
+  }
+  } finally {
+    flushGrades_(subT);
+    subT.gradeBuf = null;
   }
   const retryAt = aiDown ? scheduleAiRetry_() : '';
   return 'Chấm: ' + nRL + ' bài R/L, ' + nAI + ' lượt AI' + (nWeb ? ', ' + nWeb + ' bài Writing gửi lên web' : '') + (nErr ? ', ' + nErr + ' lỗi (xem cột Trạng thái chấm)' : '') +
@@ -1113,7 +1200,25 @@ function writeGrade_(t, i, res) {
   if (res.stamp) r[S['Chấm lúc']] = new Date();
   const next = r.slice(S['Điểm'], S['Chấm lúc'] + 1);
   if (!res.stamp && next.every((v, idx) => cellSame_(v, prev[idx]))) return;
+  // Ghi theo lô: gom các dòng đã đổi, ghi 1 lần cho mỗi đoạn dòng liền nhau (flushGrades_)
+  if (t.gradeBuf) { t.gradeBuf[i] = true; return; }
   t.sh.getRange(i + 2, S['Điểm'] + 1, 1, 6).setValues([next]);
+}
+
+/** Ghi các dòng điểm đang chờ trong t.gradeBuf (mỗi đoạn dòng liền nhau 1 lần ghi). Trả về số dòng đã ghi. */
+function flushGrades_(t) {
+  if (!t.gradeBuf) return 0;
+  const idx = Object.keys(t.gradeBuf).map(Number).sort((a, b) => a - b);
+  t.gradeBuf = {};
+  let k = 0;
+  while (k < idx.length) {
+    let j = k;
+    while (j + 1 < idx.length && idx[j + 1] === idx[j] + 1) j++;
+    t.sh.getRange(idx[k] + 2, S['Điểm'] + 1, j - k + 1, 6)
+      .setValues(idx.slice(k, j + 1).map(i => t.rows[i].slice(S['Điểm'], S['Chấm lúc'] + 1)));
+    k = j + 1;
+  }
+  return idx.length;
 }
 
 // ---- Reading / Listening ---------------------------------------------------
@@ -1436,7 +1541,21 @@ function gradeAI_(r, cw, skill, cfg, taskCache) {
     .concat([{ text: '--- STUDENT RESPONSE ---' }]).concat(content.parts);
 
   AI_PROVIDER_ = 'gemini';
-  let res = callGemini_(parts, cfg);
+  let res, fromTranscript = false;
+  try {
+    res = callGemini_(parts, cfg);
+  } catch (e) {
+    // AI không trả lời được với file ghi âm: bước 1 chép lời (nhớ 6 giờ), bước 2 chấm từ bản chép lời
+    if (!(isSpeaking && e instanceof AiEmptyError)) throw e;
+    const tr = speakingTranscript_(r, content.parts, cfg);
+    if (!tr) throw e;
+    const textParts = [{ text: prompt + '\nNOTE: only a transcript is available (no audio). Estimate Pronunciation (P) conservatively from the transcript and say so in its comment.' }]
+      .concat(task.parts.length ? task.parts : [{ text: '(Không có đề bài — hãy suy luận đề từ bài làm.)' }])
+      .concat([{ text: '--- STUDENT RESPONSE (TRANSCRIPT) ---\n' + tr }]);
+    res = callGemini_(textParts, cfg);
+    if (!res.transcript) res.transcript = tr;
+    fromTranscript = true;
+  }
   let provider = AI_PROVIDER_;
   // Nhận xét phải đúng ngôn ngữ trong Cấu hình (model dự phòng đôi khi viết tiếng Anh): hỏi lại 1 lần
   if (/Việt/i.test(String(cfg.lang)) && !looksVietnamese_(res)) {
@@ -1448,6 +1567,7 @@ function gradeAI_(r, cw, skill, cfg, taskCache) {
   const critBands = crit.map(c => res.criteria && res.criteria[c] ? Number(res.criteria[c].band) : NaN);
   const overall = critBands.every(b => !isNaN(b)) ? roundIelts_(critBands.reduce((a, b) => a + b, 0) / 4) : Number(res.overall_band) || '';
   const critStr = crit.map((c, k) => c + ' ' + (isNaN(critBands[k]) ? '?' : critBands[k])).join(', ');
+  if (fromTranscript) res.summary = '[Chấm từ bản chép lời — điểm Phát âm (P) chỉ là ước lượng, nên nghe lại file ghi âm.] ' + (res.summary || '');
   const docUrl = writeFeedbackDoc_(r, skill, crit, res, overall, cfg);
   if (isSpeaking) { try { recordSpeakingAi_(r, critBands, overall, res.transcript); } catch (e) { /* bỏ qua */ } }
 
@@ -1882,6 +2002,7 @@ function callGemini_(parts, cfg) {
           break;
         }
         try { PropertiesService.getScriptProperties().deleteProperty('AI_DOWN_SINCE'); } catch (e) { /* bỏ qua */ }
+        countAiCall_();
         const parsed = tryParseJson_(text);
         if (parsed !== undefined) return parsed;
         badJson = true;
@@ -1915,6 +2036,24 @@ function callGemini_(parts, cfg) {
     if (!p.getProperty('AI_DOWN_SINCE')) p.setProperty('AI_DOWN_SINCE', new Date().toISOString());
   } catch (e) { /* bỏ qua */ }
   throw new OverloadError('Gemini quá tải (đã thử ' + models.filter(m => GEMINI_SKIP_[m] !== 404).join(', ') + ') — sẽ thử lại sau 20 phút. ' + last.slice(0, 200));
+}
+
+/**
+ * Bản chép lời bài nói (bước 1 của chấm Speaking 2 bước), nhớ 6 giờ theo file ghi âm để lần chấm lại
+ * không phải gửi file lần nữa. Trả về '' nếu không chép được.
+ */
+function speakingTranscript_(r, audioParts, cfg) {
+  const key = 'tr_' + String(r[S['File IDs']] || '').replace(/[^\w-]/g, '').slice(0, 200);
+  const cache = CacheService.getScriptCache();
+  try { const hit = cache.get(key); if (hit) return hit; } catch (e) { /* chép lại */ }
+  let text = '';
+  try {
+    const json = callGemini_([{ text: 'Transcribe this IELTS Speaking recording exactly as spoken (keep the student\'s mistakes, ' +
+      'mark long pauses as "..."). Return JSON only: {"transcript": "..."}' }].concat(audioParts), cfg);
+    text = String((json && json.transcript) || '').trim();
+  } catch (e) { return ''; }
+  if (text) { try { cache.put(key, text.slice(0, 90000), 21600); } catch (e) { /* bỏ qua */ } }
+  return text;
 }
 
 /** Lý do Gemini trả lời rỗng, bằng tiếng Việt: "bị chặn: SAFETY", "dừng: MAX_TOKENS"… */
@@ -2245,7 +2384,7 @@ function writingEssay_(r, cw, skill, cfg, allowOcr) {
     const mime = f.getMimeType();
     if (mime === MimeType.GOOGLE_DOCS || mime === DOCX_MIME) {
       sawDoc = true;
-      const paras = readDocx_(f).paras;
+      const paras = readDocxParas_(f);
       const w = parseWriting_(paras);
       if (w.hasMarkers) {
         sawMarkers = true;
@@ -2956,6 +3095,23 @@ function readDocx_(fileOrId) {
   };
 }
 
+/**
+ * Chỉ lấy đoạn văn của file Word/Docs, nhớ theo (ID, lần sửa cuối): cùng lượt chạy và 6 giờ trong CacheService.
+ * Bài Writing 2 Task đọc cùng 1 file 2 lần; file không đổi thì các lượt sau không phải tải lại.
+ */
+const DOCX_MEMO_ = {};
+function readDocxParas_(f) {
+  let key = '';
+  try { key = 'dx_' + f.getId() + '_' + f.getLastUpdated().getTime(); } catch (e) { return readDocx_(f).paras; }
+  if (DOCX_MEMO_[key]) return DOCX_MEMO_[key];
+  const cache = CacheService.getScriptCache();
+  try { const hit = cache.get(key); if (hit) return (DOCX_MEMO_[key] = JSON.parse(hit)); } catch (e) { /* đọc lại */ }
+  const paras = readDocx_(f).paras;
+  DOCX_MEMO_[key] = paras;
+  try { const json = JSON.stringify(paras); if (json.length < 90000) cache.put(key, json, 21600); } catch (e) { /* file lớn: không lưu */ }
+  return paras;
+}
+
 /** XML của Word -> danh sách đoạn văn (giữ dấu tab, xuống dòng). */
 function docxXmlToParagraphs_(xml) {
   const body = String(xml).replace(/^[\s\S]*?<w:body>/, '');
@@ -3379,8 +3535,7 @@ function parseWriting_(paras) {
   const clean = arr => arr.filter(p => !/^(TASK\s*[12]\s*(?:[–—:-]\s*)?Answer|Word count|You should spend|Write at least|Write about the following)/i.test(p) &&
     !/^[-_.…\s]+$/.test(p) && !/^\d{1,2}$/.test(p));
   const slice = (s, e) => (s < 0 ? [] : paras.slice(s + 1, e < 0 ? undefined : e));
-  const firstAns = [a1, a2].filter(x => x >= 0).sort((x, y) => x - y)[0];
-  const end = (s, cands) => cands.filter(x => x > s).sort((x, y) => x - y)[0];
+    const end = (s, cands) => cands.filter(x => x > s).sort((x, y) => x - y)[0];
   // Đề của 1 Task (từ "WRITING TASK n" tới Task sau / dòng mốc đầu tiên). Có HS viết bài ngay dưới dòng
   // "Write at least … words" (phía trên dòng mốc): phần đó tách khỏi đề, trả về riêng (task*Above).
   const region = (t, stop) => {
@@ -3390,7 +3545,8 @@ function parseWriting_(paras) {
       ? { prompt: clean(all).join('\n').trim(), above: '' }
       : { prompt: clean(all.slice(0, lastInstr + 1)).join('\n').trim(), above: clean(all.slice(lastInstr + 1)).join('\n').trim() };
   };
-  const r1 = region(t1, end(t1, [t2, firstAns])), r2 = region(t2, end(t2, [firstAns]));
+  // Hỗ trợ cả 2 bố cục: đề 1, đề 2 rồi 2 dòng mốc; hoặc xen kẽ đề 1, mốc 1, đề 2, mốc 2
+  const r1 = region(t1, end(t1, [t2, a1, a2])), r2 = region(t2, end(t2, [a1, a2]));
   return {
     hasMarkers: a1 >= 0 || a2 >= 0,
     has1: a1 >= 0 || t1 >= 0,
@@ -3399,8 +3555,8 @@ function parseWriting_(paras) {
     task2Prompt: r2.prompt,
     task1Above: r1.above,
     task2Above: r2.above,
-    task1Answer: a1 < 0 ? '' : clean(slice(a1, end(a1, [a2]) || -1)).join('\n').trim(),
-    task2Answer: a2 < 0 ? '' : clean(slice(a2, end(a2, [a1]) || -1)).join('\n').trim(),
+    task1Answer: a1 < 0 ? '' : clean(slice(a1, end(a1, [a2, t2]) || -1)).join('\n').trim(),
+    task2Answer: a2 < 0 ? '' : clean(slice(a2, end(a2, [a1, t1]) || -1)).join('\n').trim(),
   };
 }
 
@@ -5172,6 +5328,14 @@ function sendTeacherReport_() {
 
   let health = null;
   try { health = healthCheck_(); } catch (e) { health = { ok: false, problems: ['Không chạy được bước kiểm tra hệ thống: ' + e.message], notes: [] }; }
+  // Bài chờ chấm quá 24 giờ (AI lỗi kéo dài, hết hạn mức…): báo trong email để thầy/cô xử lý
+  const stale = waitingList_(subs).filter(w => w.hours >= WAIT_STALE_HOURS);
+  if (stale.length && health) {
+    health.ok = false;
+    health.problems = (health.problems || []).concat([stale.length + ' bài chờ chấm quá ' + WAIT_STALE_HOURS + ' giờ: ' +
+      stale.slice(0, 8).map(w => w.student + ' (' + w.title + ' · ' + w.skill + ', ' + w.hours + ' giờ — ' + w.status.slice(0, 80) + ')').join('; ') +
+      (stale.length > 8 ? '; …' : '') + '. Mở trang Bài nộp để chấm tay hoặc bấm "Chấm lại".']);
+  }
   const mail = teacherReportEmail_(cfg, tz, recent, subs, pending, webPending, errors, health, todoLists_(subs, cfg));
   MailApp.sendEmail({ to: cfg.reportEmail, subject: (health && !health.ok ? '⚠ ' : '') + mail.subject, htmlBody: mail.html });
   return 'Đã gửi báo cáo tới ' + cfg.reportEmail;
@@ -5563,6 +5727,7 @@ function portalOverview_() {
       lastBackup: PropertiesService.getScriptProperties().getProperty('LAST_BACKUP_MS') ? new Date(Number(PropertiesService.getScriptProperties().getProperty('LAST_BACKUP_MS'))).toISOString() : '' },
     newClasses: pNewCourses_(),
     aiDownSince: PropertiesService.getScriptProperties().getProperty('AI_DOWN_SINCE') || '',
+    ai: aiStatus_(subs),
     todoItems: (function () { const tl = todoLists_(subs, cfg); return { manual: tl.manual.slice(0, 30), formPending: tl.formPending.slice(0, 30) }; })(),
     templates: courses.filter(c => c.penaltyLink).map(c => ({ id: c.id, name: c.name })),
   };
@@ -5581,7 +5746,8 @@ function portalSubmissions_(p) {
   const view = PORTAL_VIEWS[p.view] ? p.view : 'review';
   const cw = readTable_(SH.CW, CW_HEADERS).rows;
   const links = pCwLinks_(cw);
-  let rows = readTable_(SH.SUB, SUB_HEADERS).rows.filter(r => r[S['Submission ID']]).map(r => pSubView_(r, links));
+  const raw = readTable_(SH.SUB, SUB_HEADERS).rows;
+  let rows = raw.filter(r => r[S['Submission ID']]).map(r => pSubView_(r, links));
   if (p.courseId) rows = rows.filter(v => v.courseId === String(p.courseId));
   if (p.courseWorkId) rows = rows.filter(v => v.courseWorkId === String(p.courseWorkId));
   if (p.skill) rows = rows.filter(v => v.skill.indexOf(String(p.skill)) === 0);
@@ -5589,10 +5755,35 @@ function portalSubmissions_(p) {
   const counts = {};
   Object.keys(PORTAL_VIEWS).forEach(k => { counts[k] = rows.filter(PORTAL_VIEWS[k]).length; });
   rows = rows.filter(PORTAL_VIEWS[view]).sort((a, b) => (b.turnedInAt || b.dueAt).localeCompare(a.turnedInAt || a.dueAt));
+  if (view === 'review') markConfident_(rows, raw);
   const assignments = cw.filter(w => !p.courseId || String(w[C['Course ID']]) === String(p.courseId))
     .sort((a, b) => (b[C['Hạn nộp']] || 0) - (a[C['Hạn nộp']] || 0)).slice(0, 40)
     .map(w => ({ id: pStr_(w[C['CourseWork ID']]), title: pStr_(w[C['Tiêu đề']]), className: pStr_(w[C['Lớp']]) }));
   return { view, counts, total: rows.length, rows: rows.slice(0, 300), classes: pCourses_().map(c => ({ id: c.id, name: c.name })), assignments };
+}
+
+/**
+ * Bài AI chấm "chắc chắn": band lệch không quá 0.5 so với band trung bình các bài cùng kỹ năng
+ * của học sinh đó đã được duyệt/gửi trước đây (cần ít nhất 2 bài cũ). Thêm v.usualBand, v.confident.
+ */
+const CONFIDENT_GAP = 0.5;
+function markConfident_(views, allRows) {
+  const hist = {};
+  allRows.forEach(r => {
+    const b = Number(r[S['Band']]);
+    if (r[S['Band']] === '' || isNaN(b) || !(r[S['Đã gửi lúc']] || r[S['Duyệt gửi']] === true)) return;
+    const k = String(r[S['Email']]).toLowerCase() + '|' + String(r[S['Kỹ năng']]).split(' ')[0];
+    (hist[k] = hist[k] || []).push(b);
+  });
+  views.forEach(v => {
+    const b = Number(v.band);
+    const past = hist[String(v.email).toLowerCase() + '|' + String(v.skill).split(' ')[0]] || [];
+    if (v.band === '' || isNaN(b) || past.length < 2) return;
+    const recent = past.slice(-4);
+    const avg = recent.reduce((x, y) => x + y, 0) / recent.length;
+    v.usualBand = Math.round(avg * 10) / 10;
+    v.confident = Math.abs(b - avg) <= CONFIDENT_GAP && !/kiểm tra|Chấm từ bản chép lời/i.test(v.summary + ' ' + v.gradeStatus);
+  });
 }
 
 function pFindSub_(id) {
@@ -5771,6 +5962,7 @@ function assignPreview_(plan) {
         return {
           n: q.n, type: q.type, options: q.options || [], key: displayKey_(item.key[q.n] || ''),
           explained: !!(info && info.text), level: (info && info.level) || '', err: (info && info.err) || '',
+          suspect: suspectKey_(q, item.key[q.n]),
         };
       }),
       scale: (item.scale || []).map(x => x[0] + '–' + x[1] + ': ' + x[2]),
@@ -5780,6 +5972,16 @@ function assignPreview_(plan) {
     speaking: plan.skills.indexOf('S') >= 0 ? (plan.speakingPrompt ? 'Có đề Speaking cho AI' : 'Không có file đề Speaking') : '',
     missingAudio: plan.skills.indexOf('L') >= 0 && (plan.warnings || []).some(w => /chưa có file nghe/i.test(w)),
   };
+}
+
+/** Đáp án trông không ổn (để tô đỏ trong bảng xem trước): trống, không có trong lựa chọn, còn chữ tiếng Việt / quá dài. */
+function suspectKey_(q, key) {
+  const k = String(key || '').trim();
+  if (!k) return 'Chưa có đáp án';
+  if (q.type === 'choice' && !k.split('|').some(a => (q.options || []).some(o => matchAnswer_(a, o)))) return 'Không có trong lựa chọn ' + (q.options || []).join('/');
+  if (/[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(k)) return 'Còn chữ tiếng Việt (ghi chú cho GV?)';
+  if (k.split('|').some(a => a.split(/\s+/).length > 6)) return 'Đáp án dài bất thường';
+  return '';
 }
 
 /** Tải file nghe (mp3/m4a…) từ trang Giao bài lên thư mục đề. Tối đa 25 MB. */
