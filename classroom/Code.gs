@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-16.1';
+const CLASSROOM_VERSION = '2026-11-16.2';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -227,11 +227,17 @@ function noteAiProblem_(kind, msg) {
   try { PropertiesService.getScriptProperties().setProperty('AI_LAST_PROBLEM', JSON.stringify({ at: new Date().toISOString(), kind, msg: String(msg).slice(0, 300) })); } catch (e) { /* bỏ qua */ }
 }
 
-/** Bài đang chờ chấm (AI chưa chấm được / chờ lượt sau), cũ nhất trước. stale = chờ quá 24 giờ. */
+/**
+ * Bài đang chờ chấm (AI chưa chấm được / chờ lượt sau), cũ nhất trước. stale = chờ quá 24 giờ.
+ * Không tính bài HS nộp trên Classroom nhưng chưa làm Form (do HS, đã có trong "Việc cần làm").
+ */
 const WAIT_STALE_HOURS = 24;
 function waitingList_(subs) {
   const now = Date.now();
-  return subs.filter(r => r[S['Submission ID']] && !r[S['Đã gửi lúc']] && r[S['Nộp lúc']] && /^Chờ/.test(String(r[S['Trạng thái chấm']] || '')))
+  return subs.filter(r => {
+    const st = String(r[S['Trạng thái chấm']] || '');
+    return r[S['Submission ID']] && !r[S['Đã gửi lúc']] && r[S['Nộp lúc']] && /^Chờ/.test(st) && !/chưa thấy câu trả lời trên Form/.test(st);
+  })
     .map(r => {
       const since = new Date(r[S['Nộp lúc']]).getTime();
       return {
