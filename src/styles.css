@@ -2168,6 +2168,26 @@ a.cl-stat:hover {
   font-size: 0.84rem;
 }
 
+.cl-usual {
+  font-size: 0.8rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.cl-usual.is-ok {
+  background: #d8f3dc;
+  color: #1b4332;
+}
+
+.cl-usual.is-off {
+  background: #fde2e1;
+  color: #9b2c2c;
+}
+
+.cl-key-bad {
+  color: #b42318;
+}
+
 .cl-detail {
   padding: 4px 16px 16px;
 }
