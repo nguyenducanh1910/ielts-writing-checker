@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-16.2';
+const CLASSROOM_VERSION = '2026-11-16.3';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -431,7 +431,7 @@ function hourlyJob_() {
     const bk = tm('sao lưu', () => safeStep_('Sao lưu', () => backupJob_(false)));
     if (bk) log_('Sao lưu', bk);
     const rc = safeStep_('Kiểm tra lại Writing', recheckWritingSkips_);
-    const b = tm('chấm', () => gradeAll_({ formCache }));
+    const b = tm('chấm', () => gradeAll_({ formCache, light: !deep }));
     const w = tm('điểm web Writing', () => syncWritingScores_());
     const c = getConfig_().autoSend ? tm('gửi nhận xét', () => sendApprovedFeedback_()) : '';
     const d = tm('kết quả R/L', () => rlAfterDeadline_({ formCache }));
@@ -1094,13 +1094,15 @@ function gradeAll_(opts) {
     const isAI = !isWeb && /^Writing|^Speaking/.test(skill);
     if (!isRL && !isAI && !isWeb) continue;
     // R/L làm trên Form: chấm ngay khi có câu trả lời, kể cả khi HS chưa bấm "Nộp" trên Classroom.
-    // Lượt cập nhật nhanh chỉ mở Form của bài đang mở / vừa hết hạn (≤ 2 ngày); bài cũ hơn để lượt mỗi giờ dò.
+    // Lượt cập nhật nhanh và lượt mỗi giờ (opts.light) chỉ mở Form của bài đang mở / vừa hết hạn (≤ 2 ngày);
+    // bài cũ hơn (HS chưa làm Form) để lượt đầy đủ mỗi 6 giờ dò — mở Form là bước tốn thời gian nhất.
     const rlForm = isRL && rlSource_(cw, skill).formUrl;
     const due = cw[C['Hạn nộp']];
-    const rlQuick = !opts.quick || !(due instanceof Date) || due.getTime() >= Date.now() - 2 * 86400e3;
+    const narrow = opts.quick || opts.light;
+    const rlQuick = !narrow || !(due instanceof Date) || due.getTime() >= Date.now() - 2 * 86400e3;
     const gs = String(r[S['Trạng thái chấm']] || '');
     if (!needsGrading_(r) && !(rlForm && notGradedYet_(r) && rlQuick)) continue;
-    if (opts.quick && rlForm && !rlQuick && /^Chờ:/.test(gs)) continue;
+    if (narrow && rlForm && !rlQuick && /^Chờ:/.test(gs)) continue;
     if ((isAI || isWeb) && nAI >= cfg.maxAi) continue;
     if (opts.quick && (isAI || isWeb) && /^Chờ:/.test(gs)) continue;
     if ((stoppedByQuota || aiDown) && (isAI || (isRL && !rlForm))) { if (aiDown && isAI) nWait++; continue; } // phần cần AI để lần sau, phần khác chấm tiếp
@@ -2089,7 +2091,7 @@ function aiRetryJob_() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'aiRetryJob').forEach(t => ScriptApp.deleteTrigger(t));
   try {
     withLock_(() => {
-      const b = gradeAll_();
+      const b = gradeAll_({ light: true });
       const w = syncWritingScores_();
       log_('Chấm lại (AI quá tải)', [b, w].filter(String).join(' | '));
     });
