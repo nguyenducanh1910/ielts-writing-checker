@@ -30,6 +30,17 @@ export function roundBand(average: number): number {
   return Math.min(9, Math.max(0, result));
 }
 
+/**
+ * Overall IELTS Writing band from both tasks: Task 2 counts twice as much as Task 1,
+ * then rounded like other averages (6 and 7 → 6.67 → 6.5).
+ */
+export function writingOverall(task1: number, task2: number): number {
+  if (!isValidBand(task1) || !isValidBand(task2)) {
+    throw new Error('Both task bands must be from 0 to 9 in 0.5 steps');
+  }
+  return roundBand((task1 + 2 * task2) / 3);
+}
+
 /** Overall band from the four criterion scores. */
 export function overallBand(scores: readonly number[]): number {
   if (scores.length !== 4 || !scores.every(isValidBand)) {
