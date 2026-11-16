@@ -108,6 +108,14 @@ export interface AdminEssayResponse {
   };
   student: { id: string; name: string; email: string; className: string } | null;
   assignment: { id: string; title: string } | null;
+  /** Writing Task 1/2 handed in together on Classroom: the other task. */
+  writingPair?: {
+    id: string;
+    taskTypeLabel: string;
+    status: string;
+    overall: number | null;
+    resultSent: boolean;
+  } | null;
   parent: {
     id: string;
     prompt: string;

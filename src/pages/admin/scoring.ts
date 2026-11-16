@@ -119,6 +119,7 @@ const SENT_TOAST: Record<string, [string, 'info' | 'error']> = {
   failed: ['Score submitted, but the email failed. Resend it from the Email page.', 'error'],
   no_email: ['Score submitted. This student has no email address.', 'info'],
   duplicate: ['Score saved. The email had already been sent.', 'info'],
+  held: ['Score saved. The email goes out with the other Writing task in one message.', 'info'],
   none: ['Score saved. No email was sent.', 'info'],
 };
 
@@ -331,6 +332,23 @@ function buildScoring(
         : null,
     ),
     driveStatusBox(data, reload),
+    data.writingPair
+      ? notice(
+          data.writingPair.status === 'scored' ? 'success' : 'info',
+          h(
+            'span',
+            null,
+            `This homework also has ${data.writingPair.taskTypeLabel} `,
+            data.writingPair.status === 'scored'
+              ? `(scored, band ${data.writingPair.overall ?? '–'}). `
+              : '(not scored yet). ',
+            data.writingPair.status === 'scored'
+              ? 'Submitting this score sends one email with both tasks and the overall Writing band. '
+              : 'The result email waits until both tasks are scored, then goes out as one email. ',
+            link(`/admin/score/${data.writingPair.id}`, `Open ${data.writingPair.taskTypeLabel}`),
+          ),
+        )
+      : null,
     h('h3', null, 'Prompt'),
     h('p', { class: 'prompt-text' }, essay.prompt),
     data.samePrompt && data.samePrompt.count > 1
@@ -815,6 +833,10 @@ function buildScoring(
       duplicate: notice(
         'info',
         'Score saved. The email had already been sent, so it was not sent again.',
+      ),
+      held: notice(
+        'info',
+        'Score submitted. The result email waits for the other Writing task of this homework: when you submit it, the student gets one email with both tasks and the overall Writing band.',
       ),
       none: notice(
         'success',

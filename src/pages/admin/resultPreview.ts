@@ -15,7 +15,9 @@ export interface ServerPreview {
   studentName: string;
   overall: number;
   rewriteDueAt: string | null;
-  delivery: 'send' | 'no_email' | 'none';
+  delivery: 'send' | 'no_email' | 'none' | 'held';
+  /** Writing Task 1/2 pair: the other task's label ('' when there is none). */
+  pairTask?: string;
   subject: string;
   html: string;
   text: string;
@@ -170,15 +172,20 @@ export function openResultPreview(
             'info',
             `When you send, ${server.studentName} sees this on the website and receives the email at ${server.to}.`,
           )
-        : server.delivery === 'no_email'
+        : server.delivery === 'held'
           ? notice(
-              'warning',
-              `${server.studentName} has no email address. The score is saved, but no email is sent.`,
-            )
-          : notice(
               'info',
-              'The updated score and feedback appear on the website. No email is sent (tick “Notify student again” to send one).',
-            );
+              `${server.studentName} handed in ${server.pairTask || 'the other task'} with this one. The score is saved now; one email with both tasks and the overall Writing band goes out when you submit ${server.pairTask || 'the other task'}.`,
+            )
+          : server.delivery === 'no_email'
+            ? notice(
+                'warning',
+                `${server.studentName} has no email address. The score is saved, but no email is sent.`,
+              )
+            : notice(
+                'info',
+                'The updated score and feedback appear on the website. No email is sent (tick “Notify student again” to send one).',
+              );
     const sendLabel =
       server.delivery === 'send'
         ? options.alreadyScored
