@@ -5,7 +5,7 @@ import { type Child, h, replace } from '../../dom';
 import { async, busy, empty, errorBox, link, notice } from '../../ui/components';
 import { newClassesSection, refreshClassesButton } from './newClasses';
 import type { QueueItem, QueueResponse } from '../admin/types';
-import type { Health, Overview, OverviewAssignment, TodoItem } from './types';
+import type { AiStatus, Health, Overview, OverviewAssignment, TodoItem } from './types';
 import { dueText, externalLink, pageHeader, progress, statTile, viDateTime } from './ui';
 
 async function load() {
@@ -130,6 +130,56 @@ export function healthCard(
     body,
     runtimeLine(runtime),
     btn,
+  );
+}
+
+/** "Tình trạng AI": lượt gọi Gemini hôm nay, sự cố gần nhất, bài đang chờ chấm (chờ quá 24 giờ tô đỏ). */
+export function aiCard(ai: AiStatus | undefined): HTMLElement | null {
+  if (!ai) return null;
+  const problemRecent =
+    ai.lastProblem && Date.now() - Date.parse(ai.lastProblem.at) < 24 * 3600e3 ? ai.lastProblem : null;
+  return h(
+    'div',
+    { class: 'cl-health', 'data-testid': 'ai-status' },
+    h('h2', null, 'Tình trạng AI'),
+    h(
+      'p',
+      { class: ai.downSince || ai.stale ? 'cl-danger' : 'cl-ok' },
+      ai.downSince
+        ? `Gemini đang quá tải từ ${viDateTime(ai.downSince)} — hệ thống tự thử lại.`
+        : ai.stale
+          ? `${ai.stale} bài chờ chấm quá 24 giờ.`
+          : '✓ AI chấm bình thường.',
+    ),
+    h(
+      'p',
+      { class: 'cl-muted' },
+      `Hôm nay: ${ai.callsToday} lượt gọi Gemini · ${ai.waiting} bài đang chờ chấm.`,
+    ),
+    problemRecent
+      ? h(
+          'p',
+          { class: 'cl-muted' },
+          `Sự cố gần nhất (${viDateTime(problemRecent.at)}): ${problemRecent.kind} — ${problemRecent.msg.slice(0, 160)}`,
+        )
+      : null,
+    ai.waitingItems.length
+      ? h(
+          'ul',
+          { class: 'cl-health-list' },
+          ...ai.waitingItems.slice(0, 6).map((w) =>
+            h(
+              'li',
+              { class: w.hours >= 24 ? 'cl-danger' : '' },
+              h('b', null, w.student),
+              ` · ${w.title} · ${w.skill} · chờ ${w.hours} giờ`,
+              h('br'),
+              h('small', { class: 'cl-muted' }, w.status.slice(0, 120)),
+            ),
+          ),
+        )
+      : null,
+    ai.waiting ? link('/lop/bai-nop?view=all', 'Xem bài nộp') : null,
   );
 }
 
@@ -289,6 +339,7 @@ function overviewContent(ov: Overview, writing: QueueItem[] | null, reload: () =
         'aside',
         null,
         healthCard(ov.health, ov.runtime),
+        aiCard(ov.ai),
         h('h2', null, 'Lớp của bạn'),
         refreshClassesButton(reload),
         h(

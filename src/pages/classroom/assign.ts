@@ -250,6 +250,16 @@ export function assignPage(): Node {
                   "Tải file mẫu Teacher's Book (Word)",
                 ),
                 ' — soạn theo mẫu này thì hệ thống đọc được đủ đáp án, giải thích, độ khó và thang đánh giá.',
+                h('br'),
+                h(
+                  'a',
+                  {
+                    href: './templates/Writing-2-task-mau.docx',
+                    download: 'Writing-2-task-mau.docx',
+                  },
+                  'Tải file mẫu đề Writing 2 Task (Word)',
+                ),
+                ' — giữ nguyên các dòng "WRITING TASK 1/2" và "TASK 1/2 – Answer"; bấm "Kiểm tra trước" để xem đáp án và đề hệ thống đọc được (đáp án nghi sai được tô đỏ).',
               ),
               field({ label: 'Ghi chú thêm cho học sinh', control: note }),
               h(

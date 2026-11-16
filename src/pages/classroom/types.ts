@@ -45,6 +45,8 @@ export interface Overview {
   templates?: Array<{ id: string; name: string }>;
   /** Since when Gemini has been overloaded (ISO), '' when it works. */
   aiDownSince?: string;
+  /** Gemini calls today, last problem, submissions still waiting for a grade. */
+  ai?: AiStatus;
   /** "Việc cần làm hôm nay": submissions to check by hand, Forms done but not turned in. */
   todoItems?: { manual: TodoItem[]; formPending: TodoItem[] };
 }
@@ -107,6 +109,10 @@ export interface Submission {
   courseWorkId: string;
   courseId: string;
   assignmentLink: string;
+  /** "Chờ duyệt" only: the student's average band for this skill in earlier approved work. */
+  usualBand?: number;
+  /** AI band within 0.5 of usualBand (at least 2 earlier results): safe to approve in bulk. */
+  confident?: boolean;
 }
 
 export type SubmissionView = 'review' | 'approved' | 'error' | 'web' | 'missing' | 'all';
@@ -143,6 +149,28 @@ export interface PreviewQuestion {
   explained: boolean;
   level: string;
   err: string;
+  /** Why the answer looks wrong ("Còn chữ tiếng Việt", "Không có trong lựa chọn A/B/C"), or ''. */
+  suspect?: string;
+}
+
+export interface WaitingItem {
+  id: string;
+  student: string;
+  title: string;
+  skill: string;
+  className: string;
+  status: string;
+  since: string;
+  hours: number;
+}
+
+export interface AiStatus {
+  callsToday: number;
+  downSince: string;
+  lastProblem: { at: string; kind: string; msg: string } | null;
+  waiting: number;
+  stale: number;
+  waitingItems: WaitingItem[];
 }
 
 export interface AssignPreview {

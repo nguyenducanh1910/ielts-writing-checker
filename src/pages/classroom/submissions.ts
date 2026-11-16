@@ -280,6 +280,18 @@ function card(sub: Submission, selected?: Set<string>, onSelect?: () => void): H
           : s.score
             ? h('span', { class: 'cl-band' }, s.score)
             : null,
+        s.usualBand !== undefined && s.gradeKind === 'review'
+          ? h(
+              'span',
+              {
+                class: `cl-usual${s.confident ? ' is-ok' : ' is-off'}`,
+                title: s.confident
+                  ? 'Band AI gần với band thường ngày của học sinh: có thể duyệt nhanh'
+                  : 'Band AI lệch nhiều so với band thường ngày: nên xem kỹ',
+              },
+              `thường ~${s.usualBand}`,
+            )
+          : null,
         submitBadge(s.status),
         s.turnedInAt ? gradeBadge(s.gradeKind) : null,
         h(
@@ -325,6 +337,18 @@ export function submissionsPage(ctx: RouteContext): Node {
           'Duyệt & gửi ngay',
         );
         const pickAll = h('input', { type: 'checkbox', 'aria-label': 'Chọn tất cả bài chờ duyệt' });
+        // Bài AI chấm có band gần band thường ngày của học sinh (đủ 2 bài cũ): duyệt nhanh được
+        const confident = reviewable.filter((r) => r.confident);
+        const pickConfident = h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn btn-small',
+            hidden: !confident.length,
+            title: 'Chọn các bài có band AI lệch không quá 0.5 so với band trung bình các bài trước của học sinh',
+          },
+          `Chọn ${confident.length} bài AI chấm sát band thường ngày`,
+        );
         const refresh = () => {
           bulkCount.textContent = `${selected.size} bài được chọn`;
           bulkApprove.disabled = bulkSend.disabled = selected.size === 0;
@@ -373,6 +397,12 @@ export function submissionsPage(ctx: RouteContext): Node {
             }
           });
         };
+        pickConfident.addEventListener('click', () => {
+          selected.clear();
+          confident.forEach((r) => selected.add(r.id));
+          drawList();
+          refresh();
+        });
         bulkApprove.addEventListener('click', () => void bulk(false, bulkApprove));
         bulkSend.addEventListener('click', () => void bulk(true, bulkSend));
         const bulkBar =
@@ -381,6 +411,7 @@ export function submissionsPage(ctx: RouteContext): Node {
                 'div',
                 { class: 'cl-bulk', 'data-testid': 'bulk' },
                 h('label', { class: 'cl-check' }, pickAll, ' Chọn tất cả'),
+                pickConfident,
                 bulkCount,
                 bulkApprove,
                 bulkSend,

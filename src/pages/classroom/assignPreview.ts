@@ -14,13 +14,22 @@ function groupOf(p: AssignPreview['parts'][number], n: number) {
 export function previewView(pv: AssignPreview): HTMLElement {
   const parts = pv.parts.map((p) => {
     const explained = p.questions.filter((q) => q.explained).length;
+    const suspects = p.questions.filter((q) => q.suspect);
     const rows = p.questions.map((q) => {
       const g = groupOf(p, q.n);
       return [
         String(q.n),
         g ? `${g.label}${g.pair ? ' · cặp ' + g.a + '–' + g.b : ''}` : 'Điền đáp án',
         q.type === 'choice' ? q.options.join(' / ') : 'Ô trả lời',
-        h('b', null, q.key || '—'),
+        q.suspect
+          ? h(
+              'span',
+              { class: 'cl-key-bad', title: q.suspect },
+              h('b', null, q.key || '—'),
+              h('br'),
+              h('small', null, `⚠ ${q.suspect}`),
+            )
+          : h('b', null, q.key || '—'),
         q.explained ? '✓' : '—',
         [q.level, q.err].filter(Boolean).join(' · ') || '—',
       ];
@@ -34,6 +43,13 @@ export function previewView(pv: AssignPreview): HTMLElement {
         h('b', null, `${p.name}: ${p.total} câu`),
         ` · giải thích ${explained}/${p.total}`,
         p.scale.length ? ` · thang: ${p.scale.join('; ')}` : '',
+        suspects.length
+          ? h(
+              'span',
+              { class: 'cl-key-bad' },
+              ` · ⚠ ${suspects.length} câu đáp án cần xem lại (câu ${suspects.map((q) => q.n).join(', ')})`,
+            )
+          : '',
       ),
       table(
         ['Câu', 'Nhóm', 'Trên Google Form', 'Đáp án', 'Giải thích', 'Mức độ · lỗi dự kiến'],
