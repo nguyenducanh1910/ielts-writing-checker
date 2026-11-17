@@ -90,7 +90,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-16.3';
+const CLASSROOM_VERSION = '2026-11-17.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -1101,7 +1101,10 @@ function gradeAll_(opts) {
     const narrow = opts.quick || opts.light;
     const rlQuick = !narrow || !(due instanceof Date) || due.getTime() >= Date.now() - 2 * 86400e3;
     const gs = String(r[S['Trạng thái chấm']] || '');
-    if (!needsGrading_(r) && !(rlForm && notGradedYet_(r) && rlQuick)) continue;
+    // Dò Form của HS chưa bấm "Nộp" trên Classroom (có thể đã làm Form): chỉ lượt mỗi giờ, không phải
+    // mỗi lượt cập nhật nhanh 15 phút (mở Form tốn thời gian chạy); bài đã nộp vẫn chấm ngay ở lượt nhanh.
+    const pollForm = rlForm && notGradedYet_(r) && rlQuick && !(opts.quick && !r[S['Nộp lúc']]);
+    if (!needsGrading_(r) && !pollForm) continue;
     if (narrow && rlForm && !rlQuick && /^Chờ:/.test(gs)) continue;
     if ((isAI || isWeb) && nAI >= cfg.maxAi) continue;
     if (opts.quick && (isAI || isWeb) && /^Chờ:/.test(gs)) continue;
