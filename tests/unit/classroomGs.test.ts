@@ -794,6 +794,8 @@ describe('class system code (classroom/Code.gs)', () => {
       graded.push(String(r[S['CourseWork ID']]));
       return { skip: true };
     };
+    gs.gradeAll_({ quick: true });
+    expect(graded).toEqual([]); // not turned in: the hourly run looks at the Form
     gs.gradeAll_({ light: true });
     expect(graded).toEqual(['new']);
     graded.length = 0;
