@@ -382,6 +382,21 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(k).toEqual({ 6: 'Hollis', 7: 'A', 8: 'B', 9: 'C', 10: 'E', 11: 'D' });
   });
 
+  it('splits a pair written on both questions: "A, C (either order)" at 14 and 15', () => {
+    const gs = load();
+    const k = gs.spreadChoiceKeys_({
+      14: 'A, C (either order)',
+      15: 'A, C (either order)',
+      27: 'A, D (either order)',
+      28: 'D, A (either order)',
+      29: 'B and D – any order',
+      30: 'B, D theo thứ tự tùy ý',
+      31: 'E, F',
+      32: 'A',
+    });
+    expect(k).toEqual({ 14: 'A', 15: 'C', 27: 'A', 28: 'D', 29: 'B', 30: 'D', 31: 'E', 32: 'A' });
+  });
+
   it('reads a Listening teacher book with a "2b. Giải thích chi tiết" table (L teacher.docx)', () => {
     const gs = load();
     const row = (n: number, acc: string, ev: string, trap: string, lv: string) => [
