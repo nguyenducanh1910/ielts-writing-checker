@@ -135,10 +135,21 @@ export interface SubmissionFile {
   url: string;
 }
 
+export interface WritingPartOption {
+  id: string;
+  label: string;
+  /** Suitable length, e.g. "35–75". */
+  words: string;
+}
+
 export interface AssignOptions {
   classes: ClassInfo[];
   types: string[];
   timeZone: string;
+  /** Parts a Writing practice can be limited to ("Introduction", "Body 1"…), per task. */
+  writingParts?: { 1: WritingPartOption[]; 2: WritingPartOption[] };
+  /** Assignment types that include Writing (the part choice shows only for these). */
+  writingTypes?: string[];
 }
 
 export interface PreviewQuestion {

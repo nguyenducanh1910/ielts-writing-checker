@@ -126,6 +126,41 @@ export function assignPage(): Node {
           placeholder: 'Không bắt buộc. Hiện ở cuối phần hướng dẫn trên Classroom.',
         });
         const publish = h('input', { type: 'checkbox', name: 'publish', checked: true });
+        // Bài luyện từng phần Writing: chọn phần cần viết cho từng Task (để trống = cả bài)
+        const partSel = (n: 1 | 2) =>
+          selectEl(
+            `writingPart${n}`,
+            (opt.writingParts?.[n] ?? []).map((x) => ({
+              value: x.id,
+              label: `${x.label} (${x.words} từ)`,
+            })),
+            '',
+            'Cả bài',
+          );
+        const part1 = partSel(1);
+        const part2 = partSel(2);
+        const partsBox = h(
+          'fieldset',
+          { class: 'cl-parts', hidden: true },
+          h('legend', null, 'Writing: luyện từng phần (không bắt buộc)'),
+          h(
+            'div',
+            { class: 'grid-2' },
+            field({ label: 'Task 1', control: part1 }),
+            field({ label: 'Task 2', control: part2 }),
+          ),
+          h(
+            'p',
+            { class: 'hint' },
+            'Chọn một phần thì học sinh chỉ cần viết phần đó. AI nhận xét theo tiêu chí của phần (Đạt / Gần đạt / Chưa đạt), không cho band IELTS, không gửi lên web chấm Writing; bài vào mục "Chờ duyệt" như Speaking. Task nào không có trong file đề thì bỏ qua.',
+          ),
+        );
+        const showParts = () => {
+          partsBox.hidden =
+            !opt.writingParts || !(opt.writingTypes ?? []).includes(type.value);
+        };
+        type.addEventListener('change', showParts);
+        showParts();
         const result = h('div', { class: 'cl-assign-result', 'aria-live': 'polite' });
         const payload = () => ({
           className: cls.value,
@@ -135,6 +170,7 @@ export function assignPage(): Node {
           dueAt: due.value,
           note: note.value,
           publish: publish.checked,
+          writingParts: partsBox.hidden ? {} : { 1: part1.value, 2: part2.value },
         });
         const valid = () => {
           if (!session.value.trim()) return 'Nhập tên buổi (VD: L25).';
@@ -261,6 +297,7 @@ export function assignPage(): Node {
                 ),
                 ' — giữ nguyên các dòng "WRITING TASK 1/2" và "TASK 1/2 – Answer"; bấm "Kiểm tra trước" để xem đáp án và đề hệ thống đọc được (đáp án nghi sai được tô đỏ).',
               ),
+              partsBox,
               field({ label: 'Ghi chú thêm cho học sinh', control: note }),
               h(
                 'label',
