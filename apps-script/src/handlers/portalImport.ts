@@ -240,8 +240,58 @@ function ensureClass(ctx: Ctx, payload: unknown) {
   return { classId, label: cls.label, created, added, keptInOtherClass: kept, skippedAdmins };
 }
 
+/**
+ * Status, final score and result email of essays the class system sent here (by essay id), so it
+ * can update its sheet without opening this app's whole database spreadsheet.
+ */
+function essaysStatus(ctx: Ctx, payload: unknown) {
+  const r = new Reader(payload);
+  checkSecret(ctx, r);
+  const ids = r.ids('ids', 300);
+  r.done();
+  const wanted = new Set(ids);
+  const sent = new Map<string, string>();
+  for (const e of ctx.db.find(
+    'EmailEvents',
+    (x) =>
+      wanted.has(x.essay_id) &&
+      (x.type === 'result' || x.type === 'result_resent') &&
+      x.status === 'sent',
+  ))
+    if (!sent.has(e.essay_id) || e.created_at > (sent.get(e.essay_id) ?? ''))
+      sent.set(e.essay_id, e.created_at);
+  const scores = new Map(
+    ctx.db.find('Scores', (s) => wanted.has(s.essay_id)).map((s) => [s.essay_id, s] as const),
+  );
+  return {
+    essays: ctx.db
+      .find('Essays', (e) => wanted.has(e.id))
+      .map((e) => {
+        const s = scores.get(e.id);
+        return {
+          id: e.id,
+          status: e.status,
+          taskType: e.task_type,
+          withdrawn: Boolean(e.withdrawn_at),
+          sentAt: sent.get(e.id) ?? '',
+          score: s
+            ? {
+                c1: s.criterion_1,
+                c2: s.criterion_2,
+                c3: s.criterion_3,
+                c4: s.criterion_4,
+                overall: s.overall,
+                comment: String(s.general_comment ?? '').slice(0, 1500),
+              }
+            : null,
+        };
+      }),
+  };
+}
+
 export const portalImportActions: Record<string, ActionDef> = {
   'portal.essays.import': { write: true, handler: (ctx, p) => importEssay(ctx, p) },
+  'portal.essays.status': { write: false, handler: (ctx, p) => essaysStatus(ctx, p) },
   'portal.signin': { write: true, handler: (ctx, p) => signIn(ctx, p) },
   'portal.classes.ensure': { write: true, handler: (ctx, p) => ensureClass(ctx, p) },
 };
