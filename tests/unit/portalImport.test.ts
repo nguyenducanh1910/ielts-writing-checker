@@ -340,3 +340,48 @@ describe('Writing Task 1 + Task 2 from one Classroom homework', () => {
     expect(app.call('admin.essay', { id: t2 }, admin).writingPair).toBeNull();
   });
 });
+
+describe('status of imported essays for the class system', () => {
+  it('returns status, score and result email of the essays asked for, with the secret only', () => {
+    const { app, admin, base } = setup();
+    const id = app.call(
+      'portal.essays.import',
+      base({ submissionId: 'cr-STAT#Writing Task 2-1' }),
+    ).essayId;
+    const before = app.call('portal.essays.status', { secret: SECRET, ids: [id] }).essays[0];
+    expect(before).toMatchObject({
+      id,
+      status: 'pending',
+      withdrawn: false,
+      sentAt: '',
+      score: null,
+    });
+    const config = app.call('config.get');
+    app.call(
+      'admin.saveScore',
+      {
+        essayId: id,
+        scores: { task: 6, coherence: 6.5, lexical: 6, grammar: 6 },
+        feedback: { task: 'a', coherence: 'b', lexical: 'c', grammar: 'd' },
+        generalComment: 'Good work.',
+        errors: [],
+        rewrite: { required: false, dueDate: '', note: '' },
+        submit: true,
+        notifyAgain: false,
+        requestId: 'req-stat',
+        topicId: config.topics.find((t: any) => t.label === 'Transport').id,
+        essayType: 'discussion',
+      },
+      admin,
+    );
+    const after = app.call('portal.essays.status', { secret: SECRET, ids: [id] }).essays[0];
+    expect(after.status).toBe('scored');
+    expect(after.score).toMatchObject({ comment: 'Good work.' });
+    expect(Number(after.score.overall)).toBe(6);
+    expect(after.sentAt).not.toBe('');
+    expect(app.raw('portal.essays.status', { secret: 'nope', ids: [id] })).toMatchObject({
+      ok: false,
+      error: { code: 'forbidden' },
+    });
+  });
+});

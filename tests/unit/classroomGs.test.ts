@@ -751,6 +751,307 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(formOpens).toBe(0);
   });
 
+  it('reads Google Form answers once, then only the new responses', () => {
+    const store: Record<string, string> = {};
+    const item = (id: number, title: string) => ({
+      getId: () => id,
+      getTitle: () => title,
+      getType: () => 'TEXT',
+    });
+    const items = [item(1, 'Họ tên'), item(2, '1. Question one'), item(3, '2. Question two')];
+    const resp = (email: string, t: number, a1: string, a2: string) => ({
+      getRespondentEmail: () => email,
+      getTimestamp: () => new Date(t),
+      getItemResponses: () => [
+        { getItem: () => items[1], getResponse: () => a1 },
+        { getItem: () => items[2], getResponse: () => a2 },
+      ],
+      getGradableItemResponses: () => [],
+    });
+    let all = [resp('a@x', 1000, 'river', 'B')];
+    const calls: Array<number | null> = [];
+    const gs = load({
+      FormApp: {
+        ItemType: {
+          MULTIPLE_CHOICE: 'MC',
+          CHECKBOX: 'CB',
+          LIST: 'L',
+          TEXT: 'TEXT',
+          PARAGRAPH_TEXT: 'P',
+        },
+        openByUrl: () => ({
+          getItems: () => items,
+          isQuiz: () => false,
+          getResponses: (since?: Date) => {
+            calls.push(since ? since.getTime() : null);
+            return since ? all.filter((r) => r.getTimestamp().getTime() >= since.getTime()) : all;
+          },
+        }),
+      },
+      CacheService: {
+        getScriptCache: () => ({
+          get: (k: string) => store[k] ?? null,
+          put: (k: string, v: string) => {
+            store[k] = v;
+          },
+        }),
+      },
+      Utilities: {
+        DigestAlgorithm: { MD5: 'MD5' },
+        computeDigest: () => [1, 2, 3],
+        base64EncodeWebSafe: () => 'key',
+      },
+    });
+    const first = gs.getFormResponses_('https://docs.google.com/forms/d/x/edit', {});
+    expect(first['a@x'].answers).toEqual({ 1: 'river', 2: 'B' });
+    all = [...all, resp('b@x', 2000, 'lake', 'C')];
+    const second = gs.getFormResponses_('https://docs.google.com/forms/d/x/edit', {});
+    expect(calls).toEqual([null, 1001]); // the second run asks only for responses after the first
+    expect(second['a@x'].answers).toEqual({ 1: 'river', 2: 'B' });
+    expect(second['b@x'].answers).toEqual({ 1: 'lake', 2: 'C' });
+    expect(second['a@x'].ts.getTime()).toBe(1000); // a Date again (used to mark late work)
+  });
+
+  it('reads which part of a Writing task to practise', () => {
+    const gs = load();
+    expect(gs.parseWritingParts_('Task 1: Introduction + Overview; Task 2: Body 1')).toEqual({
+      1: 'intro_overview',
+      2: 'body1',
+    });
+    expect(gs.parseWritingParts_('Task 1: intro_overview; Task 2: ')).toEqual({
+      1: 'intro_overview',
+    });
+    expect(gs.parseWritingParts_('')).toEqual({});
+    expect(gs.writingPartId_(2, 'Mở bài + kết bài')).toBe('intro_conclusion');
+    expect(gs.writingPartId_(2, 'Body 1 và Body 2')).toBe('bodies');
+    expect(gs.writingPartId_(2, 'Dàn ý')).toBe('outline');
+    expect(gs.writingPartId_(1, 'Overview')).toBe('overview');
+    expect(gs.writingPartId_(1, 'Cả bài')).toBe('');
+  });
+
+  it('gives practice-part feedback without an IELTS band', () => {
+    const gs = load();
+    const S = gs.__.S;
+    const C = gs.__.C;
+    const cw = new Array(40).fill('');
+    cw[C['Dữ liệu bài (JSON)']] = JSON.stringify({
+      components: ['Writing Task 2'],
+      writing: { task2Prompt: 'Some people think…', parts: { 2: 'intro' } },
+    });
+    const intro =
+      'Nowadays many people believe that cities offer a better life than villages. I partly agree with this view because jobs are easier to find, but life in the countryside is healthier.';
+    gs.writingEssay_ = () => ({ text: intro });
+    gs.getTaskParts_ = () => ({ parts: [{ text: 'Some people think…' }] });
+    gs.writePartFeedbackDoc_ = () => 'doc';
+    gs.looksVietnamese_ = () => true;
+    let prompt = '';
+    gs.callGemini_ = (parts: any[]) => {
+      prompt = parts[0].text;
+      return {
+        verdict: 'Gần đạt',
+        checks: [{ criterion: 'Thesis', result: 'Gần đạt', comment: 'Quan điểm chưa rõ' }],
+        summary: 'Mở bài khá tốt.',
+      };
+    };
+    const r = new Array(40).fill('');
+    r[S['File IDs']] = 'f1';
+    const res = gs.gradeAI_(r, cw, 'Writing Task 2', { lang: 'Tiếng Việt' }, {});
+    expect(prompt).toContain('ONLY this part');
+    expect(prompt).toContain('"Introduction"');
+    expect(prompt).toContain('Do NOT give an IELTS band');
+    expect(res.band).toBe('');
+    expect(res.score).toBe('Gần đạt · 31 từ (hơi ngắn)');
+    expect(res.summary).toMatch(/^Luyện Introduction: Gần đạt/);
+    expect(res.status).toBe('Đã chấm (AI) — chờ duyệt');
+    // A practice part is not sent to the Writing web
+    expect(gs.writingPartOf_(cw, 'Writing Task 2').label).toBe('Introduction');
+    expect(gs.writingPartOf_(cw, 'Writing Task 1')).toBeNull();
+  });
+
+  it('reads each sheet once per run until something writes to it', () => {
+    let reads = 0;
+    const sheet = {
+      getLastRow: () => 3,
+      getRange: () => ({
+        getValues: () => {
+          reads++;
+          return [
+            ['a', 1],
+            ['b', 2],
+          ];
+        },
+        setValue: () => undefined,
+      }),
+    };
+    const gs = load({
+      SpreadsheetApp: { getActive: () => ({ getSheetByName: () => sheet }) },
+    });
+    vm.runInContext('TABLE_MEMO_ = {};', gs);
+    const t1 = gs.readTable_('X', ['h1', 'h2']);
+    const t2 = gs.readTable_('X', ['h1', 'h2']);
+    expect(t2).toBe(t1);
+    expect(reads).toBe(1);
+    t1.sh.getRange(2, 1).setValue('z'); // a write through the table: read again next time
+    const t3 = gs.readTable_('X', ['h1', 'h2']);
+    expect(t3).not.toBe(t1);
+    expect(reads).toBe(2);
+    vm.runInContext('TABLE_MEMO_ = null;', gs); // web requests: no memory
+    gs.readTable_('X', ['h1', 'h2']);
+    gs.readTable_('X', ['h1', 'h2']);
+    expect(reads).toBe(4);
+  });
+
+  it('fills the penalty files only when submissions changed', () => {
+    const props = memoryProps();
+    const gs = load({
+      PropertiesService: props.service,
+      Utilities: {
+        DigestAlgorithm: { MD5: 'MD5' },
+        Charset: { UTF_8: 'UTF8' },
+        computeDigest: (_a: string, text: string) => [...text].map((c) => c.charCodeAt(0) % 256),
+        base64Encode: (b: number[]) => Buffer.from(b).toString('base64'),
+      },
+    });
+    const S = gs.__.S;
+    const row = (status: string) => {
+      const r = new Array(40).fill('');
+      r[S['Submission ID']] = 's1';
+      r[S['Trạng thái']] = status;
+      return r;
+    };
+    let rows = [row('Chưa nộp')];
+    gs.readTable_ = (name: string) => ({ rows: /Nộp/.test(name) ? rows : [] });
+    const first = gs.penaltyChange_(false);
+    expect(first.changed).toBe(true);
+    props.data.PENALTY_SIG = first.sig;
+    expect(gs.penaltyChange_(false).changed).toBe(false);
+    expect(gs.penaltyChange_(true).changed).toBe(true); // 2 a.m.
+    rows = [row('Đã nộp')];
+    expect(gs.penaltyChange_(false).changed).toBe(true);
+  });
+
+  it('moves finished old submissions to the archive sheet, never open ones', () => {
+    const gs = load();
+    const S = gs.__.S;
+    const day = 86400e3;
+    const mk = (id: string, dueDaysAgo: number, status: string, sent = false) => {
+      const r = new Array(40).fill('');
+      r[S['Submission ID']] = id;
+      r[S['Hạn nộp']] = vm.runInContext(`new Date(${Date.now() - dueDaysAgo * day})`, gs);
+      r[S['Trạng thái chấm']] = status;
+      r[S['Đã gửi lúc']] = sent ? 'x' : '';
+      return r;
+    };
+    const rows = [
+      mk('old-done', 90, 'Đã chấm', true),
+      mk('old-review', 90, 'Đã chấm (AI) — chờ duyệt'),
+      mk('new', 5, 'Đã chấm', true),
+    ];
+    const writes: Array<[string, number, unknown]> = [];
+    const fake = (name: string) => ({
+      getLastRow: () => 0,
+      getRange: (r: number, _c: number, n: number) => ({
+        setValues: (v: unknown[][]) =>
+          writes.push([name, r, v.map((x: any) => x[S['Submission ID']])]),
+        clearContent: () => writes.push([name, r, `clear ${n}`]),
+      }),
+    });
+    const archive = fake('archive');
+    const sub = fake('sub');
+    gs.getConfig_ = () => ({ days: 45 });
+    gs.styleHeader_ = () => undefined;
+    gs.readTable_ = () => ({ rows, sh: sub, rawSh: sub });
+    gs.SpreadsheetApp = { getActive: () => ({ getSheetByName: () => archive }) };
+    vm.runInContext('SpreadsheetApp = this.SpreadsheetApp;', gs);
+    expect(gs.archiveOldSubmissions_()).toMatch(/^Chuyển 1 bài cũ/);
+    expect(writes).toEqual([
+      ['archive', 1, ['Submission ID']], // the header row of a new archive sheet
+      ['archive', 1, ['old-done']],
+      ['sub', 2, ['old-review', 'new']],
+      ['sub', 4, 'clear 1'],
+    ]);
+  });
+
+  it('reads Writing scores from the web app instead of opening its whole sheet', () => {
+    const gs = load();
+    const S = gs.__.S;
+    const r = new Array(40).fill('');
+    r[S['Trạng thái chấm']] = 'Đã gửi lên web — chờ chấm';
+    r[S['File nhận xét']] = 'https://x/#/admin/score/essay-1';
+    const written: unknown[][] = [];
+    gs.readTable_ = () => ({
+      rows: [r],
+      sh: {
+        getRange: () => ({
+          setValues: (v: unknown[][]) => written.push(v[0]),
+          setValue: () => undefined,
+        }),
+      },
+    });
+    gs.writingConn_ = () => ({ url: 'u', secret: 's', sheetId: 'db' });
+    const calls: string[] = [];
+    gs.callWritingApi_ = (_c: unknown, action: string, p: any) => {
+      calls.push(action + ':' + p.ids.join(','));
+      return {
+        essays: [
+          {
+            id: 'essay-1',
+            status: 'scored',
+            taskType: 'task2',
+            withdrawn: false,
+            sentAt: '2026-11-20T10:00:00Z',
+            score: { c1: 6, c2: 6.5, c3: 6, c4: 6, overall: 6, comment: 'Good' },
+          },
+        ],
+      };
+    };
+    gs.SpreadsheetApp = {
+      openById: () => {
+        throw new Error('should not open the sheet');
+      },
+    };
+    vm.runInContext('SpreadsheetApp = this.SpreadsheetApp;', gs);
+    gs.syncWritingScores_();
+    expect(calls).toEqual(['portal.essays.status:essay-1']);
+    expect(r[S['Band']]).toBe(6);
+    expect(r[S['Trạng thái chấm']]).toBe('Đã chấm trên web — web đã gửi email');
+  });
+
+  it('does not call Gemini again for 18 minutes after it was overloaded', () => {
+    const props = memoryProps({ GEMINI_API_KEY: 'k' });
+    let fetches = 0;
+    const gs = load({
+      PropertiesService: props.service,
+      UrlFetchApp: {
+        fetch: () => {
+          fetches++;
+          return { getResponseCode: () => 503, getContentText: () => 'busy' };
+        },
+      },
+      Utilities: { sleep: () => undefined },
+    });
+    gs.callBackupAi_ = () => undefined;
+    expect(() => gs.callGemini_([{ text: 'x' }], { model: 'gemini-flash-latest' })).toThrow(
+      /quá tải/,
+    );
+    const first = fetches;
+    expect(Number(props.data.GEMINI_DOWN_UNTIL)).toBeGreaterThan(Date.now());
+    const again = load({
+      PropertiesService: props.service,
+      UrlFetchApp: {
+        fetch: () => {
+          fetches++;
+          return { getResponseCode: () => 503, getContentText: () => 'busy' };
+        },
+      },
+    });
+    again.callBackupAi_ = () => undefined;
+    expect(() => again.callGemini_([{ text: 'x' }], { model: 'gemini-flash-latest' })).toThrow(
+      /quá tải/,
+    );
+    expect(fetches).toBe(first); // the next run did not try the models again
+  });
+
   it('opens old Google Forms only in the full run, not every hour', () => {
     const gs = load();
     const { S, C, STATUS } = gs.__;
