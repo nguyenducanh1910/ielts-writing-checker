@@ -91,7 +91,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-24.1';
+const CLASSROOM_VERSION = '2026-11-24.2';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -3638,14 +3638,21 @@ function normalizeKeyText_(s) {
 function spreadChoiceKeys_(key) {
   const out = Object.assign({}, key);
   const SEE = /^\(?\s*(xem câu trên|như trên|xem trên|see above|as above)\s*\)?\.?$/i;
+  // "A, C (either order)" / "A and C – in any order" / "A, C theo thứ tự bất kỳ" -> ['A', 'C']; không phải cặp chữ cái -> null
+  const pair = v => {
+    const t = String(v || '').replace(/[,;(\[–—-]?\s*(?:theo\s+)?(?:thứ tự bất kỳ|thứ tự tuỳ ý|thứ tự tùy ý|không cần theo thứ tự|(?:in\s+)?(?:any|either)\s+order)\s*[)\]]?\.?\s*$/i, '').trim();
+    if (!/^[A-L](\s*(,|&|\/|và|and|or)\s*[A-L])+$/i.test(t)) return null;
+    return t.split(/\s*(?:,|&|\/|\bvà\b|\band\b|\bor\b)\s*/i).map(x => x.toUpperCase());
+  };
   Object.keys(out).map(Number).sort((a, b) => a - b).forEach(n => {
-    const t = String(out[n] || '').replace(/[,;(]?\s*(theo thứ tự bất kỳ|thứ tự bất kỳ|in any order|in either order|any order)\s*\)?\s*$/i, '').trim();
-    if (!/^[A-L](\s*(,|&|và|and)\s*[A-L])+$/i.test(t)) return;
-    const letters = t.split(/\s*(?:,|&|\bvà\b|\band\b)\s*/i).map(x => x.toUpperCase());
+    const letters = pair(out[n]);
+    if (!letters) return;
     out[n] = letters[0];
     for (let j = 1; j < letters.length; j++) {
       const v = String(out[n + j] || '').trim();
-      if (!v || SEE.test(v)) out[n + j] = letters[j];
+      // Câu sau trống / "xem câu trên" / ghi lại đúng cặp đó ("A, C (either order)" ở cả câu 14 và 15)
+      const same = pair(v);
+      if (!v || SEE.test(v) || (same && same.slice().sort().join() === letters.slice().sort().join())) out[n + j] = letters[j];
     }
   });
   return out;
