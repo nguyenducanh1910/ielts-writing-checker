@@ -44,6 +44,8 @@ export interface AiSettings {
   autoDraft: boolean;
   /** Move Gemini's own draft by its recorded bias against the teacher's final scores. */
   calibrate: boolean;
+  /** Results the teacher has not sent after this many hours are sent automatically (0 = off). */
+  autoSendHours: number;
   /** Gemini's own scores versus the teacher's final scores, per task type. */
   accuracy: Array<{
     taskType: string;

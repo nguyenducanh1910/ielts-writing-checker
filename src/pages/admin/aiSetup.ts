@@ -29,6 +29,13 @@ export function aiSetupPage(): Node {
         });
         const autoDraft = h('input', { type: 'checkbox', name: 'autoDraft' });
         autoDraft.checked = data.autoDraft;
+        const autoSend = h('input', {
+          type: 'number',
+          name: 'autoSendHours',
+          min: '0',
+          max: '720',
+          value: String(data.autoSendHours ?? 24),
+        });
         const calibrate = h('input', { type: 'checkbox', name: 'calibrate' });
         calibrate.checked = data.calibrate;
         const rubric = h('textarea', { name: 'rubric', rows: '10', maxlength: '45000' });
@@ -45,6 +52,7 @@ export function aiSetupPage(): Node {
                 samplesPerPrompt: Number(samples.value),
                 autoDraft: autoDraft.checked,
                 calibrate: calibrate.checked,
+                autoSendHours: Math.max(0, Math.round(Number(autoSend.value) || 0)),
                 rubric: rubric.value,
               });
               key.value = '';
@@ -91,7 +99,9 @@ export function aiSetupPage(): Node {
             h(
               'li',
               null,
-              'Kết quả đối chiếu được điền sẵn vào form. Thầy duyệt, sửa rồi bấm gửi như bình thường — hệ thống không tự gửi cho học viên.',
+              data.autoSendHours > 0
+                ? `Kết quả đối chiếu được điền sẵn vào form. Thầy duyệt, sửa rồi bấm gửi như bình thường. Bài thầy chưa gửi sau ${data.autoSendHours} giờ kể từ lúc học viên nộp sẽ được hệ thống tự gửi (dùng form thầy đã lưu nếu đủ 4 điểm, nếu không thì dùng bản AI chấm). Bài tự gửi không dùng làm bài mẫu; thầy vẫn mở ra sửa và gửi lại được.`
+                : 'Kết quả đối chiếu được điền sẵn vào form. Thầy duyệt, sửa rồi bấm gửi như bình thường — hệ thống không tự gửi cho học viên.',
             ),
             h(
               'li',
@@ -137,6 +147,11 @@ export function aiSetupPage(): Node {
               calibrate,
               ` Tự chỉnh điểm nháp theo độ lệch của Gemini so với thầy (từ ${CALIBRATE_MIN_SAMPLES} bài trở lên, tiêu chí lệch từ ${CALIBRATE_MIN_BIAS} band)`,
             ),
+            field({
+              label: 'Tự gửi kết quả sau (giờ)',
+              control: autoSend,
+              hint: 'Bài thầy chưa gửi sau số giờ này (tính từ lúc học viên nộp) được hệ thống tự gửi bản AI chấm. Nhập 0 để tắt.',
+            }),
             field({
               label: 'Band descriptors / tài liệu chấm (không bắt buộc)',
               control: rubric,

@@ -1084,7 +1084,7 @@ function buildScoring(
     const draftErrors = Array.isArray(draft.errors) ? draft.errors : [];
     const matched = matchClaudeErrors(
       draftErrors,
-      activeCats.map((c) => ({ id: c.id, label: c.label })),
+      activeCats.map((c) => ({ id: c.id, label: c.label, criterion: c.criterion })),
       essay.body,
     );
     state.scores = Object.fromEntries(
@@ -1453,7 +1453,9 @@ function buildClaudePanel(opts: {
     const draftErrors = Array.isArray(draft.errors) ? draft.errors : [];
     const unknown = matchClaudeErrors(
       draftErrors,
-      data.categories.filter((c) => c.active).map((c) => ({ id: c.id, label: c.label })),
+      data.categories
+        .filter((c) => c.active)
+        .map((c) => ({ id: c.id, label: c.label, criterion: c.criterion })),
       essay.body,
     );
     const load = h('button', { type: 'button', class: 'btn btn-primary' }, 'Load into form');
