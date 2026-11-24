@@ -1,10 +1,12 @@
 // Time-driven jobs, installed by installTriggers():
 // - daily: rewrite reminders (2 days before), overdue status + overdue email, housekeeping
-// - hourly: send queued emails when Gmail quota returns; auto-submit abandoned timed tests
+// - hourly: send queued emails when Gmail quota returns; auto-submit abandoned timed tests;
+//   send results the teacher has not sent within the set time (autoSend.ts)
 import { createCtx, type Ctx } from './context';
 import { clearDashboardCache } from './dashboardCache';
 import { processEmailQueue, sendEmail } from './email';
 import { weeklyAiReport } from './aiScoring';
+import { autoSendOverdue } from './autoSend';
 import { jobFromEvent, rewriteJob } from './emailJobs';
 import { finalizeSubmission } from './handlers/essays';
 import type { Services } from './services';
@@ -101,9 +103,16 @@ export function runDailyJob(svc: Services) {
 export function runHourlyJob(svc: Services) {
   return withLock(svc, (ctx) => {
     const auto = autoSubmitExpired(ctx);
+    let autoSent: ReturnType<typeof autoSendOverdue> | string;
+    try {
+      autoSent = autoSendOverdue(ctx);
+    } catch (err) {
+      autoSent = `failed: ${(err as Error).message}`;
+    }
     const queue = processEmailQueue(ctx, (e) => jobFromEvent(ctx, e));
     return {
       autoSubmitted: auto.submitted,
+      autoSent,
       emailsSent: queue.sent,
       emailsFailed: queue.failed,
       emailsQueued: queue.remaining,

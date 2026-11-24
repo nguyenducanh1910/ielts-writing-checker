@@ -4,12 +4,26 @@ import { type SourceScoreRow, sourceCalibration } from '../../shared/stats';
 import { bool, type Ctx, num } from './context';
 import { cached } from './dashboardCache';
 
+/** AiJobs "step" of an essay whose result the system sent by itself (the teacher did not review it). */
+export const AUTO_SENT_STEP = 'auto_sent';
+
+/** Essays whose result was sent automatically and not reviewed by the teacher since. */
+export function autoSentIds(ctx: Ctx): Set<string> {
+  if (!ctx.svc.spreadsheet.getSheetByName('AiJobs')) return new Set();
+  return new Set(ctx.db.find('AiJobs', (j) => j.step === AUTO_SENT_STEP).map((j) => j.essay_id));
+}
+
 export function sourceScoreRows(ctx: Ctx, filter: { taskType?: string } = {}): SourceScoreRow[] {
+  // An automatically sent result is the AI's own score, not the teacher's: it would hide the bias.
+  const auto = autoSentIds(ctx);
   const essays = new Map(
     ctx.db
       .find(
         'Essays',
-        (e) => e.status === 'scored' && (!filter.taskType || e.task_type === filter.taskType),
+        (e) =>
+          e.status === 'scored' &&
+          !auto.has(e.id) &&
+          (!filter.taskType || e.task_type === filter.taskType),
       )
       .map((e) => [e.id, e]),
   );

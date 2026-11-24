@@ -104,6 +104,11 @@ export function aiConfig(ctx: Ctx) {
     autoDraft: setting(ctx, 'ai_auto_draft', 'on') !== 'off',
     /** Move Gemini's own draft by its recorded bias against the teacher's final scores. */
     calibrate: setting(ctx, 'ai_calibrate', 'on') !== 'off',
+    /** Results not sent by the teacher after this many hours are sent automatically (0 = off). */
+    autoSendHours: (() => {
+      const n = Number(setting(ctx, 'auto_send_hours', '24'));
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 720) : 24;
+    })(),
   };
 }
 
@@ -662,6 +667,7 @@ function settingsView(ctx: Ctx) {
     samplesPerPrompt: cfg.samplesPerPrompt,
     autoDraft: cfg.autoDraft,
     calibrate: cfg.calibrate,
+    autoSendHours: cfg.autoSendHours,
     accuracy: geminiAccuracy(ctx),
     sampleCount: activeSampleIds(ctx).size,
     jobsReady: jobsReady(ctx.svc),
@@ -749,6 +755,7 @@ function saveSettings(ctx: Ctx, payload: unknown) {
   const clearGemini = r.has('clearGeminiKey') ? r.bool('clearGeminiKey') : false;
   const geminiModel = r.str('geminiModel', { max: 64, optional: true });
   const rubric = r.str('rubric', { max: MAX_RUBRIC, optional: true, trim: false });
+  const autoSendHours = r.int('autoSendHours', { min: 0, max: 720, optional: true });
   const samples = r.int('samplesPerPrompt', {
     min: 0,
     max: MAX_SAMPLES_PER_PROMPT,
@@ -769,6 +776,8 @@ function saveSettings(ctx: Ctx, payload: unknown) {
   if (r.has('autoDraft')) putSetting(ctx, 'ai_auto_draft', r.bool('autoDraft') ? 'on' : 'off');
   if (r.has('calibrate')) putSetting(ctx, 'ai_calibrate', r.bool('calibrate') ? 'on' : 'off');
   if (samples !== null && samples !== undefined) putSetting(ctx, 'ai_samples', String(samples));
+  if (autoSendHours !== null && autoSendHours !== undefined)
+    putSetting(ctx, 'auto_send_hours', String(autoSendHours));
   return settingsView(ctx);
 }
 
