@@ -13,6 +13,7 @@ import {
 import { placeExcerpts } from '../../../shared/excerpt';
 import { PROMPT_KEY_RE, promptKey, promptLabel } from '../../../shared/promptKey';
 import { latestJobs } from '../aiScoring';
+import { approveMany, previewOverall } from '../autoSend';
 import { calibrationFor, isSample, setSample } from '../calibration';
 import { essayLabel } from '../category';
 import { ApiError, bool, type Ctx, type EssayRow, num, parseJson } from '../context';
@@ -74,6 +75,24 @@ function promptGroups(ctx: Ctx, keys: Map<string, string>, include: string) {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
+/** Overall band for the queue: the sent score, else what would be sent (saved form / AI result). */
+function queueScore(
+  ctx: Ctx,
+  e: EssayRow,
+  qs: string,
+): { overall: number; source: 'final' | 'teacher' | 'ai' } | null {
+  if (qs === 'scored') {
+    const s = ctx.db.findOne('Scores', (x) => x.essay_id === e.id);
+    const o = s ? num(s.overall) : null;
+    return o === null ? null : { overall: o, source: 'final' };
+  }
+  try {
+    return previewOverall(ctx, e);
+  } catch {
+    return null;
+  }
+}
+
 function queue(ctx: Ctx, payload: unknown) {
   const r = new Reader(payload);
   const taskType = r.oneOf('taskType', TASK_TYPES, true);
@@ -123,6 +142,7 @@ function queue(ctx: Ctx, payload: unknown) {
       pasteAttempts: num(e.paste_attempts) ?? 0,
       activity: qs === 'scored' ? resultActivity(ctx, e) : null,
       ai: ai.get(e.id) ?? null,
+      score: queueScore(ctx, e, qs),
     }));
   // Oldest first; recently scored essays newest first.
   items.sort((a, b) =>
@@ -552,6 +572,15 @@ function withdrawEssay(ctx: Ctx, payload: unknown) {
 
 export const adminActions: Record<string, ActionDef> = {
   'admin.queue': { write: false, handler: (ctx, p) => queue(ctx, p) },
+  'admin.approveMany': {
+    write: true,
+    handler: (ctx, p) => {
+      const r = new Reader(p);
+      const ids = r.ids('essayIds', 50);
+      r.done();
+      return approveMany(ctx, ids);
+    },
+  },
   'admin.essay': { write: false, handler: (ctx, p) => adminEssay(ctx, p) },
   'admin.readEssays': { write: false, handler: (ctx, p) => readEssays(ctx, p) },
   'admin.essayImage': {
