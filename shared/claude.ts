@@ -3,6 +3,7 @@
 // pastes back. All functions here are pure and unit tested.
 import { isValidBand, overallBand } from './band';
 import { CRITERIA, type Criterion, LIMITS, TASK_TYPE_LABELS, type TaskType } from './constants';
+import { resolveCategory } from './errorCategory';
 import { placeExcerpts } from './excerpt';
 
 export const ESSAY_START = '<<<ESSAY_START>>>';
@@ -44,8 +45,8 @@ For every essay the teacher sends:
    - "lexical": Lexical Resource.
    - "grammar": Grammatical Range and Accuracy.
 2. Calibrate against the teacher's scored samples in this Project's files.
-3. Tag specific errors. Copy each "excerpt" EXACTLY from the essay (same spelling, punctuation and spacing) so the app can find it. Keep excerpts short: the words that are wrong plus a little context.
-4. Use ONLY category labels from the error category list in this Project's files. If nothing fits, use the closest label.
+3. Tag the specific errors: go through the essay sentence by sentence and tag every clear grammar, vocabulary, spelling and punctuation mistake (plus the main coherence and task problems), not only a few examples. One mistake per item. Copy each "excerpt" EXACTLY from the essay (same spelling, punctuation and spacing) so the app can find it: one continuous piece of the essay, never joined with "..." and never a list of several separate words (tag each misspelt word as its own item). Keep excerpts short: the words that are wrong plus a little context.
+4. "category" must be ONE of the labels from the error category list in this Project's files, copied exactly (for example "Articles", "Word choice", "Linking words"). Never use a criterion name such as "Grammar", "Grammatical Range and Accuracy", "Lexical Resource", "Coherence and Cohesion" or "Task Response" as a category. If nothing fits exactly, use the closest label.
 5. LANGUAGE: write all comments for the student in VIETNAMESE: the four "feedback" texts, "general_comment" and each error's "note". Keep the student's English where it belongs: "excerpt" is copied exactly from the essay (English) and "correction" is the corrected or improved English text. When a comment quotes words from the essay or suggests better English wording, keep those words in English (for example in quotation marks). Category labels stay exactly as in the category list.
 6. Write feedback in Markdown, addressed to the student, specific and encouraging. Do not give an overall band; the app calculates it.
 7. For Task 2, suggest a topic label (for example Education, Environment, Technology). For Task 1 Academic, use "".
@@ -414,33 +415,60 @@ export function parseClaudeReply(text: string): ParseResult {
 export interface CategoryOption {
   id: string;
   label: string;
+  /** grammar / lexical / coherence / task: helps when the AI gives a criterion name. */
+  criterion?: string;
 }
 
 export interface MatchedError extends ClaudeError {
   categoryId: string | null;
-  /** True when the label matched no active category; the admin must choose one. */
+  /** True when no category could be chosen for the label; the admin must choose one. */
   unknownCategory: boolean;
   start: number | null;
   end: number | null;
-  /** True when the excerpt was not found exactly; the admin must place or delete it. */
+  /** True when the excerpt was not found in the essay; the admin must place or delete it. */
   unplaced: boolean;
 }
 
-/** Match category labels (ignoring case) and find excerpts in the essay. */
+/**
+ * "bicvcle, notible, peiod" -> "bicycle, notable, period": one error per word when the
+ * excerpt is a list of separate words that each occur in the essay and the correction has
+ * the same number of items. Other errors are kept as they are.
+ */
+function splitWordLists(list: ClaudeError[], body: string): ClaudeError[] {
+  const out: ClaudeError[] = [];
+  for (const e of list) {
+    const items = e.excerpt.split(/\s*[,;]\s*/).map((x) => x.trim());
+    const fixes = (e.correction ?? '').split(/\s*[,;]\s*/).map((x) => x.trim());
+    if (
+      items.length >= 2 &&
+      items.length === fixes.length &&
+      items.every((x) => x && x.split(/\s+/).length <= 3) &&
+      !body.includes(e.excerpt.trim()) &&
+      items.every((x) => body.includes(x))
+    ) {
+      items.forEach((x, i) => out.push({ ...e, excerpt: x, correction: fixes[i] ?? '' }));
+    } else out.push(e);
+  }
+  return out;
+}
+
+/**
+ * Choose a category for each error (exact label, a near label, or a guess from the
+ * correction when the AI wrote a criterion name) and find excerpts in the essay.
+ */
 export function matchClaudeErrors(
   errors: ClaudeError[],
   activeCategories: CategoryOption[],
   body: string,
 ): MatchedError[] {
-  const list = Array.isArray(errors) ? errors : [];
+  const list = splitWordLists(Array.isArray(errors) ? errors : [], body);
   const cats = Array.isArray(activeCategories) ? activeCategories : [];
-  const byLabel = new Map(cats.map((c) => [c.label.trim().toLowerCase(), c.id]));
   const spans = placeExcerpts(
     body,
     list.map((e) => e.excerpt),
   );
   return list.map((e, i) => {
-    const categoryId = byLabel.get(e.category.trim().toLowerCase()) ?? null;
+    const categoryId = resolveCategory(e.category, cats, e);
     const span = spans[i];
     return {
       ...e,
