@@ -226,3 +226,26 @@ describe('results sent automatically after 24 hours', () => {
     expect(app.db().byId('Essays', essay.id)!.status).not.toBe('scored');
   });
 });
+
+describe('quick approval from the queue', () => {
+  it('shows the overall band to be sent and sends the selected essays', () => {
+    const { app, admin, essay } = setup();
+    addAiDraft(app, essay.id, essay.body);
+    const item = app.call('admin.queue', {}, admin).items.find((i: any) => i.id === essay.id);
+    expect(item.score).toEqual({ overall: 6, source: 'ai' });
+    const other = app
+      .call('admin.queue', { status: 'scored' }, admin)
+      .items.find((i: any) => i.id !== essay.id);
+    const res = app.call('admin.approveMany', { essayIds: [essay.id, other.id] }, admin);
+    expect(res.sent).toBe(1);
+    expect(res.skipped).toBe(1); // already scored
+    expect(app.db().byId('Essays', essay.id)!.status).toBe('scored');
+    const after = app
+      .call('admin.queue', { status: 'scored' }, admin)
+      .items.find((i: any) => i.id === essay.id);
+    expect(after.score).toEqual({ overall: 6, source: 'final' });
+    // Students cannot call it
+    const student = app.login('demo.binh@example.com');
+    expect(app.raw('admin.approveMany', { essayIds: [other.id] }, student).ok).toBe(false);
+  });
+});
