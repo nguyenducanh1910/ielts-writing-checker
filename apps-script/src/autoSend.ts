@@ -3,6 +3,7 @@
 //  - otherwise the newest AI result: Gemini's reconciled result, Gemini's own draft, or Claude's
 //    pasted draft. Errors the app cannot place in the essay are left out.
 // An essay with no AI result yet gets a Gemini job; it is sent once that job is done.
+// Only essays submitted after the rule was first switched on (setting auto_send_since).
 // Automatically sent results are marked (calibration.ts) so they are not used as samples or to
 // measure Gemini's bias; when the teacher later edits and sends one again, it counts as theirs.
 import {
@@ -128,6 +129,13 @@ export function autoSendOverdue(ctx: Ctx) {
   const out = { sent: 0, queuedAi: 0, failed: 0, hours };
   if (hours <= 0) return out;
   const cutoff = ctx.now.getTime() - hours * 3600000;
+  // Only essays submitted after the rule was first switched on: an old backlog is not sent at once.
+  let since = ctx.db.findOne('Settings', (s) => s.key === 'auto_send_since')?.value ?? '';
+  if (!since) {
+    since = ctx.nowIso;
+    ctx.db.insert('Settings', { key: 'auto_send_since', value: since });
+  }
+  const sinceMs = Date.parse(since) || 0;
   const waiting = ctx.db
     .find(
       'Essays',
@@ -135,7 +143,8 @@ export function autoSendOverdue(ctx: Ctx) {
         (e.status === 'pending' || e.status === 'in_review') &&
         !e.withdrawn_at &&
         Boolean(e.submitted_at) &&
-        Date.parse(e.submitted_at) <= cutoff,
+        Date.parse(e.submitted_at) <= cutoff &&
+        Date.parse(e.submitted_at) >= sinceMs,
     )
     .sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
   const hasJobs = Boolean(ctx.svc.spreadsheet.getSheetByName('AiJobs'));
