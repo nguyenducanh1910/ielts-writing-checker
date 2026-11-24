@@ -25,6 +25,11 @@ export interface QueueItem {
   activity: ResultActivity | null;
   /** Latest automatic scoring run (Gemini), if any. */
   ai?: AiJobView | null;
+  /**
+   * Overall band: 'final' = sent to the student; 'teacher' = the form the teacher saved;
+   * 'ai' = the AI result that "Duyệt nhanh" would send. null: nothing to send yet.
+   */
+  score?: { overall: number; source: 'final' | 'teacher' | 'ai' } | null;
 }
 
 export interface AiJobView {

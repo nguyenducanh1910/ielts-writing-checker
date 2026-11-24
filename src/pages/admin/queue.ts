@@ -21,6 +21,7 @@ import {
 import { formatDateTime, modeLabel, QUEUE_STATUS_LABELS, taskLabel } from '../../ui/format';
 import { ACTIVITY_HEADERS, activityCells } from './activity';
 import { batchScoring, canBatch } from './batch';
+import { overallCell, quickApprove } from './quickApprove';
 import type { QueueItem, QueueResponse } from './types';
 
 const STATUS_KIND: Record<string, string> = {
@@ -111,11 +112,18 @@ export function queuePage(ctx: RouteContext): Node {
         const batch = batchScoring(data.items, reload);
         const batchable = data.items.some((item) => canBatch(item));
         const scoredView = filters.status === 'scored';
+        const quick = quickApprove(data.items, reload);
         const rows = data.items.map((item) => {
           const cells = queueRow(item, reload, filterQuery(q, NEXT_KEYS));
+          // Overall band right after the status
+          cells.splice(5, 0, overallCell(item));
           // Scored essays: did the student get, open and act on the result?
-          if (scoredView) cells.splice(5, 0, ...activityCells(item.activity));
-          return batchable ? [batch.checkbox(item), ...cells] : cells;
+          if (scoredView) cells.splice(6, 0, ...activityCells(item.activity));
+          return [
+            ...(quick.any ? [quick.checkbox(item)] : []),
+            ...(batchable ? [batch.checkbox(item)] : []),
+            ...cells,
+          ];
         });
         return [
           ...banners,
@@ -141,19 +149,22 @@ export function queuePage(ctx: RouteContext): Node {
                 h('span', { class: 'hint' }, 'One after another on one page, in this order.'),
               )
             : null,
+          quick.panel,
           batchable ? batch.panel : null,
           aiQueueButton(data.items, reload),
           rows.length
             ? table(
                 [
+                  ...(quick.any ? ['Gửi'] : []),
                   ...(batchable ? ['Batch'] : []),
                   'Student',
                   'Essay',
                   'Mode',
                   'Submitted',
                   'Status',
+                  'Overall',
                   ...(scoredView ? ACTIVITY_HEADERS : []),
-                  '',
+                  'Actions',
                 ],
                 rows,
                 `${rows.length} essay(s)${filters.status === 'scored' ? ', newest first' : ', oldest first'}`,
