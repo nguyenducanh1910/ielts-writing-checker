@@ -987,6 +987,41 @@ describe('class system code (classroom/Code.gs)', () => {
     ]);
   });
 
+  it('approves AI results still waiting for review after 24 hours', () => {
+    const props = memoryProps({ AUTO_APPROVE_SINCE: String(Date.now() - 100 * 3600e3) });
+    const gs = load({ PropertiesService: props.service });
+    const S = gs.__.S;
+    const hour = 3600e3;
+    const mk = (id: string, hoursAgo: number, status: string, approved = false) => {
+      const r = new Array(40).fill('');
+      r[S['Submission ID']] = id;
+      r[S['Email']] = id + '@x.com';
+      r[S['Trạng thái chấm']] = status;
+      r[S['Chấm lúc']] = vm.runInContext(`new Date(${Date.now() - hoursAgo * hour})`, gs);
+      r[S['Duyệt gửi']] = approved;
+      return r;
+    };
+    const rows = [
+      mk('old', 30, 'Đã chấm (AI) — chờ duyệt'),
+      mk('fresh', 3, 'Đã chấm (AI) — chờ duyệt'),
+      mk('check', 30, 'Lỗi — cần kiểm tra tay: file hỏng'),
+      mk('done', 30, 'Đã chấm (AI) — chờ duyệt', true),
+      mk('backlog', 200, 'Đã chấm (AI) — chờ duyệt'), // graded before the rule was switched on
+    ];
+    const set: string[] = [];
+    const sh = {
+      getRange: (row: number) => ({ setValue: () => set.push(rows[row - 2]![S['Submission ID']]) }),
+    };
+    gs.ensureConfigRows_ = () => undefined;
+    gs.readTable_ = () => ({ rows, sh, rawSh: sh });
+    gs.getConfig_ = () => ({ autoApproveH: 24 });
+    expect(gs.autoApproveOverdue_()).toBe('Tự duyệt 1 bài chờ duyệt quá 24 giờ');
+    expect(set).toEqual(['old']);
+    expect(rows[0]![S['Duyệt gửi']]).toBe(true);
+    gs.getConfig_ = () => ({ autoApproveH: 0 });
+    expect(gs.autoApproveOverdue_()).toBe('');
+  });
+
   it('reads Writing scores from the web app instead of opening its whole sheet', () => {
     const gs = load();
     const S = gs.__.S;

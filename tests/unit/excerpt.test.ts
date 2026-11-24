@@ -8,11 +8,33 @@ describe('excerpt to offset matching', () => {
     expect(findExcerpt(body, 'They goes')).toEqual({ start: 32, end: 41 });
   });
 
-  it('trims outer whitespace but is otherwise exact', () => {
+  it('trims outer whitespace; ignores case and repeated spaces when there is no exact match', () => {
     expect(findExcerpt(body, '  They goes ')).toEqual({ start: 32, end: 41 });
-    expect(findExcerpt(body, 'they goes')).toBeNull();
-    expect(findExcerpt(body, 'They  goes')).toBeNull();
+    expect(findExcerpt(body, 'they goes')).toEqual({ start: 32, end: 41 });
+    expect(findExcerpt(body, 'They  goes')).toEqual({ start: 32, end: 41 });
     expect(findExcerpt(body, '')).toBeNull();
+  });
+
+  it('finds excerpts across line breaks and curly quotes (essays pasted from Word/PDF)', () => {
+    const text =
+      'Overall, the figure of Train\u2019s\nusers underwent a\r\ndownward trend, dropped dramatically.';
+    const a = findExcerpt(text, "the figure of Train's users")!;
+    expect(text.slice(a.start, a.end)).toBe('the figure of Train\u2019s\nusers');
+    const b = findExcerpt(text, 'underwent a downward trend, dropped dramatically')!;
+    expect(text.slice(b.start, b.end)).toBe('underwent a\r\ndownward trend, dropped dramatically');
+  });
+
+  it('places "first words ... last words" from the first to the last part', () => {
+    const text = 'In 1990 this figure witnesses a rise, and car users rise sharply.';
+    const s = findExcerpt(text, 'this figure witnesses... car users rise')!;
+    expect(text.slice(s.start, s.end)).toBe('this figure witnesses a rise, and car users rise');
+  });
+
+  it('accepts a copy with one small difference, but not different text', () => {
+    const text = 'Many children prefer to stay their hometowns after school.';
+    const s = findExcerpt(text, 'prefer to stay there hometowns')!;
+    expect(text.slice(s.start, s.end)).toBe('prefer to stay their hometowns');
+    expect(findExcerpt(text, 'completely different words here')).toBeNull();
   });
 
   it('uses the next occurrence for repeated excerpts', () => {
