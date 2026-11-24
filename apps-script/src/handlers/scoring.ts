@@ -13,7 +13,7 @@ import {
 import { endOfDayUtc } from '../../../shared/dates';
 import { buildPracticeTasks } from '../../../shared/practice';
 import { adminTimezone, ApiError, type Ctx, type EssayRow, parseJson } from '../context';
-import { setSample } from '../calibration';
+import { AUTO_SENT_STEP, setSample } from '../calibration';
 import { type Category, categoryColumns } from '../category';
 import { clearDashboardCache } from '../dashboardCache';
 import { MAX_CELL } from '../db';
@@ -218,7 +218,16 @@ function readScoreForm(ctx: Ctx, payload: unknown) {
   };
 }
 
-function saveScore(ctx: Ctx, payload: unknown) {
+/**
+ * Save or submit the score form. opts.auto: the result is sent by the system (24 h rule), not by
+ * the teacher: it is marked so it is neither a calibration sample nor used to measure bias.
+ * opts.keepRewrite: leave the essay's rewrite request as it is.
+ */
+export function saveScore(
+  ctx: Ctx,
+  payload: unknown,
+  opts: { auto?: boolean; keepRewrite?: boolean } = {},
+) {
   const {
     essay,
     submit,
@@ -276,7 +285,7 @@ function saveScore(ctx: Ctx, payload: unknown) {
     ctx.db.update('Essays', (x) => x.id === essay.id, columns);
     renameEssayFolder(ctx, essay.id);
   }
-  applyRewrite(ctx, essay, rewrite);
+  if (!opts.keepRewrite) applyRewrite(ctx, essay, rewrite);
 
   if (!submit) {
     ctx.db.update('Essays', (x) => x.id === essay.id, { status: 'in_review' });
@@ -295,8 +304,32 @@ function saveScore(ctx: Ctx, payload: unknown) {
       : { practice_required: errors.length > 0 ? 'true' : '' }),
   });
   ensureClaudeSourceRow(ctx, essay.id);
-  // Every sent result becomes a calibration sample, unless the teacher unticked it before.
-  const sample = setSample(ctx, essay.id, 'auto');
+  let sample = false;
+  if (opts.auto) {
+    if (ctx.svc.spreadsheet.getSheetByName('AiJobs')) {
+      ctx.db.insert('AiJobs', {
+        id: ctx.svc.uuid(),
+        essay_id: essay.id,
+        status: 'done',
+        step: AUTO_SENT_STEP,
+        error: '',
+        warnings: 'Tự gửi kết quả vì quá hạn duyệt',
+        usage_json: '',
+        created_at: ctx.nowIso,
+        updated_at: ctx.nowIso,
+      });
+    }
+  } else {
+    // The teacher reviewed a result the system had sent: it counts as the teacher's again.
+    if (ctx.svc.spreadsheet.getSheetByName('AiJobs')) {
+      ctx.db.update('AiJobs', (j) => j.essay_id === essay.id && j.step === AUTO_SENT_STEP, {
+        step: `${AUTO_SENT_STEP}_reviewed`,
+        updated_at: ctx.nowIso,
+      });
+    }
+    // Every sent result becomes a calibration sample, unless the teacher unticked it before.
+    sample = setSample(ctx, essay.id, 'auto');
+  }
   clearDashboardCache(ctx, essay.student_id);
 
   let email: SendOutcome | 'none' = 'none';

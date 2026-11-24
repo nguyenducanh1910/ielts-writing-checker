@@ -15,9 +15,13 @@ import { errorsView, scoreView } from '../views';
 
 export function categoryExport(ctx: Ctx): string {
   const active = ctx.db.find('ErrorCategories', (c) => bool(c.active));
-  const lines = ['ERROR CATEGORY LIST', 'Use only these labels in the "category" field.', ''];
+  const lines = [
+    'ERROR CATEGORY LIST',
+    'Use only these labels in the "category" field, copied exactly. The headings are criteria, not labels: never use a heading as a category.',
+    '',
+  ];
   for (const c of CRITERIA) {
-    lines.push(`${criterionLabel(c)}:`);
+    lines.push(`Labels for ${criterionLabel(c)}:`);
     for (const cat of active.filter((x) => x.criterion === c)) lines.push(`- ${cat.label}`);
     lines.push('');
   }
