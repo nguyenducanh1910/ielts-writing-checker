@@ -12,6 +12,7 @@ import {
   parseReconcileReply,
   type ClaudeDraft,
 } from '../../shared/claude';
+import { overallBand } from '../../shared/band';
 import { CRITERIA, LIMITS } from '../../shared/constants';
 import { bool, type Ctx, type EssayRow, num, parseJson } from './context';
 import { queueAutoDraft } from './aiScoring';
@@ -120,6 +121,72 @@ function formFromDraft(ctx: Ctx, essay: EssayRow, draft: ClaudeDraft) {
   };
 }
 
+type ResultForm = NonNullable<ReturnType<typeof teacherForm>>;
+
+/** What would be sent now: the teacher's saved form (saved = true) or the best AI result. */
+export function resultForm(ctx: Ctx, essay: EssayRow): { form: ResultForm | null; saved: boolean } {
+  const saved = essay.status === 'in_review' ? teacherForm(ctx, essay) : null;
+  if (saved) return { form: saved, saved: true };
+  const best = bestDraft(ctx, essay.id);
+  return { form: best ? formFromDraft(ctx, essay, best.draft) : null, saved: false };
+}
+
+/** Submit the form and email the student. An AI result is marked as not reviewed by the teacher. */
+function sendForm(ctx: Ctx, essay: EssayRow, form: ResultForm, saved: boolean) {
+  return saveScore(
+    ctx,
+    {
+      essayId: essay.id,
+      submit: true,
+      notifyAgain: false,
+      scores: form.scores,
+      feedback: form.feedback,
+      generalComment: form.generalComment,
+      errors: form.errors,
+    },
+    { auto: !saved, keepRewrite: true },
+  );
+}
+
+/** Overall band shown in the queue before sending: the saved form's, else the AI result's. */
+export function previewOverall(
+  ctx: Ctx,
+  essay: EssayRow,
+): { overall: number; source: 'teacher' | 'ai' } | null {
+  // Scores only (no error matching): the queue shows this for every waiting essay.
+  const saved = essay.status === 'in_review' ? teacherForm(ctx, essay) : null;
+  const scores = saved ? saved.scores : bestDraft(ctx, essay.id)?.draft.scores;
+  if (!scores) return null;
+  const bands = CRITERIA.map((c) => Number(scores[c]));
+  if (bands.some((b) => !Number.isFinite(b))) return null;
+  return { overall: overallBand(bands), source: saved ? 'teacher' : 'ai' };
+}
+
+/** "Duyệt nhanh": send the selected essays now, each with its saved form or its AI result. */
+export function approveMany(ctx: Ctx, essayIds: string[]) {
+  const out = { sent: 0, noResult: 0, skipped: 0, failed: 0, errors: [] as string[] };
+  for (const id of essayIds) {
+    const essay = ctx.db.byId('Essays', id);
+    if (!essay || essay.status === 'scored' || essay.status === 'draft' || essay.withdrawn_at) {
+      out.skipped++;
+      continue;
+    }
+    const { form, saved } = resultForm(ctx, essay);
+    if (!form) {
+      out.noResult++;
+      continue;
+    }
+    try {
+      sendForm(ctx, essay, form, saved);
+      out.sent++;
+    } catch (err) {
+      out.failed++;
+      out.errors.push((err as Error).message.slice(0, 200));
+    }
+  }
+  return out;
+}
+
 /**
  * Hourly: send the results of essays waiting longer than the set time. Returns what was done.
  * Each essay is saved on its own: one bad essay does not stop the others.
@@ -150,9 +217,7 @@ export function autoSendOverdue(ctx: Ctx) {
   const hasJobs = Boolean(ctx.svc.spreadsheet.getSheetByName('AiJobs'));
   for (const essay of waiting) {
     if (out.sent >= PER_RUN) break;
-    const saved = essay.status === 'in_review' ? teacherForm(ctx, essay) : null;
-    const best = saved ? null : bestDraft(ctx, essay.id);
-    const form = saved ?? (best ? formFromDraft(ctx, essay, best.draft) : null);
+    const { form, saved } = resultForm(ctx, essay);
     if (!form) {
       // No AI result yet: ask Gemini (not while a job waits, failed in the last 6 h or just finished).
       if (!hasJobs) continue;
@@ -168,19 +233,7 @@ export function autoSendOverdue(ctx: Ctx) {
       continue;
     }
     try {
-      saveScore(
-        ctx,
-        {
-          essayId: essay.id,
-          submit: true,
-          notifyAgain: false,
-          scores: form.scores,
-          feedback: form.feedback,
-          generalComment: form.generalComment,
-          errors: form.errors,
-        },
-        { auto: !saved, keepRewrite: true },
-      );
+      sendForm(ctx, essay, form, saved);
       out.sent++;
     } catch (err) {
       out.failed++;
