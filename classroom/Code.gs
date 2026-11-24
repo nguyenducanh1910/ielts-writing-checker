@@ -91,7 +91,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-24.2';
+const CLASSROOM_VERSION = '2026-11-25.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -123,6 +123,7 @@ const CONFIG_DEFAULTS = [
   ['Nghỉ giữa các lần gọi AI (giây)', 5, 'Tăng lên nếu hay bị lỗi 429 (vượt hạn mức miễn phí)'],
   ['Ngôn ngữ nhận xét', 'Tiếng Việt', 'Tiếng Việt hoặc English'],
   ['Tự gửi nhận xét khi đã tick "Duyệt gửi"', true, 'Bỏ tick nếu chỉ muốn gửi thủ công qua menu'],
+  ['Tự duyệt bài chờ duyệt sau (giờ)', 24, 'Bài AI đã chấm (Speaking, Writing luyện từng phần…) mà giáo viên chưa duyệt sau N giờ kể từ lúc chấm sẽ tự được duyệt và gửi cho HS. Nhập 0 để tắt'],
   ['Tự gửi kết quả R/L sau hạn nộp', true, 'Hết hạn nộp: tự gửi mỗi HS điểm, các câu sai và giải thích từ Teacher\'s Book (không cần tick Duyệt gửi)'],
   ['Gửi kết quả R/L sau hạn (giờ)', 0, 'Chờ thêm N giờ sau hạn nộp mới gửi (VD 24 nếu muốn chữa trên lớp trước)'],
   ['Tự phân tích câu hỏi sau hạn nộp', true, 'Sheet "Phân tích câu hỏi": p, D, câu cần chữa kỹ; gửi email tóm tắt cho bạn'],
@@ -451,6 +452,7 @@ function hourlyJob_() {
     const rc = safeStep_('Kiểm tra lại Writing', recheckWritingSkips_);
     const b = tm('chấm', () => gradeAll_({ formCache, light: !deep }));
     const w = tm('điểm web Writing', () => syncWritingScores_());
+    const aa = getConfig_().autoSend ? safeStep_('Tự duyệt', autoApproveOverdue_) : '';
     const c = getConfig_().autoSend ? tm('gửi nhận xét', () => sendApprovedFeedback_()) : '';
     const d = save ? '' : tm('kết quả R/L', () => rlAfterDeadline_({ formCache }));
     let p = '';
@@ -462,7 +464,7 @@ function hourlyJob_() {
         PropertiesService.getScriptProperties().setProperty('PENALTY_SIG', pen.sig);
       }
     }
-    log_('Chạy tự động', [n, a, h, ar, rc, b, w, c, d, p,
+    log_('Chạy tự động', [n, a, h, ar, rc, b, w, aa, c, d, p,
       save ? 'Tiết kiệm thời gian chạy: kết quả R/L, file phạt, sao lưu để lượt 2h sáng' : '', tm.report()].filter(String).join(' | '));
   });
 }
@@ -671,6 +673,7 @@ function getConfig_() {
     aiSleep: num('Nghỉ giữa các lần gọi AI (giây)', 5),
     lang: String(m['Ngôn ngữ nhận xét'] || 'Tiếng Việt'),
     autoSend: bool('Tự gửi nhận xét khi đã tick "Duyệt gửi"', true),
+    autoApproveH: num('Tự duyệt bài chờ duyệt sau (giờ)', 24),
     autoSendRL: bool('Tự gửi kết quả R/L sau hạn nộp', true),
     rlDelayH: num('Gửi kết quả R/L sau hạn (giờ)', 0),
     itemAnalysis: bool('Tự phân tích câu hỏi sau hạn nộp', true),
@@ -5506,6 +5509,36 @@ function portalIgnoreCourse_(p) {
 // ---------------------------------------------------------------------------
 // GỬI NHẬN XÉT ĐÃ DUYỆT
 // ---------------------------------------------------------------------------
+/**
+ * Bài AI đã chấm "chờ duyệt" mà giáo viên chưa duyệt sau N giờ (cấu hình "Tự duyệt bài chờ duyệt sau (giờ)",
+ * mặc định 24, 0 = tắt) kể từ lúc chấm: tự tick "Duyệt gửi" để lượt gửi nhận xét gửi cho HS.
+ * Chỉ áp dụng cho bài chấm sau lần chạy đầu tiên của tính năng (AUTO_APPROVE_SINCE).
+ */
+function autoApproveOverdue_() {
+  ensureConfigRows_();
+  const hours = Number(getConfig_().autoApproveH);
+  if (!(hours > 0)) return '';
+  const cutoff = Date.now() - hours * 3600000;
+  // Chỉ bài chấm sau khi bật tính năng: bài tồn đọng cũ không bị gửi hàng loạt
+  const props = PropertiesService.getScriptProperties();
+  let since = Number(props.getProperty('AUTO_APPROVE_SINCE') || 0);
+  if (!since) { since = Date.now(); props.setProperty('AUTO_APPROVE_SINCE', String(since)); }
+  const t = readTable_(SH.SUB, SUB_HEADERS);
+  const rows = [];
+  t.rows.forEach((r, i) => {
+    if (r[S['Duyệt gửi']] === true || r[S['Đã gửi lúc']] || !r[S['Email']]) return;
+    if (!/chờ duyệt/.test(String(r[S['Trạng thái chấm']] || ''))) return;
+    const at = r[S['Chấm lúc']];
+    const ms = at instanceof Date ? at.getTime() : Date.parse(at);
+    if (!ms || isNaN(ms) || ms > cutoff || ms < since) return;
+    rows.push(i);
+  });
+  if (!rows.length) return '';
+  const sh = rawSheet_(t);
+  rows.forEach(i => { t.rows[i][S['Duyệt gửi']] = true; sh.getRange(i + 2, S['Duyệt gửi'] + 1).setValue(true); });
+  return 'Tự duyệt ' + rows.length + ' bài chờ duyệt quá ' + hours + ' giờ';
+}
+
 function sendApprovedFeedback_() {
   const cfg = getConfig_();
   const t = readTable_(SH.SUB, SUB_HEADERS);
