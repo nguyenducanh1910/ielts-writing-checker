@@ -140,6 +140,11 @@ export const SCHEMA = {
     'opened_at',
     'open_token',
   ],
+  /**
+   * Google Classroom class and assignment of essays sent by the class system (portal.essays.tag),
+   * for the "Lớp học" view of the scoring queue. Created on first use if setup() has not run.
+   */
+  PortalLinks: ['essay_id', 'class_label', 'assignment', 'coursework_id', 'updated_at'],
 } as const;
 
 export type TableName = keyof typeof SCHEMA;
