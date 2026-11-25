@@ -91,7 +91,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-25.1';
+const CLASSROOM_VERSION = '2026-11-25.2';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -452,6 +452,7 @@ function hourlyJob_() {
     const rc = safeStep_('Kiểm tra lại Writing', recheckWritingSkips_);
     const b = tm('chấm', () => gradeAll_({ formCache, light: !deep }));
     const w = tm('điểm web Writing', () => syncWritingScores_());
+    const wt = safeStep_('Gắn lớp cho web Writing', tagWritingEssays_);
     const aa = getConfig_().autoSend ? safeStep_('Tự duyệt', autoApproveOverdue_) : '';
     const c = getConfig_().autoSend ? tm('gửi nhận xét', () => sendApprovedFeedback_()) : '';
     const d = save ? '' : tm('kết quả R/L', () => rlAfterDeadline_({ formCache }));
@@ -464,7 +465,7 @@ function hourlyJob_() {
         PropertiesService.getScriptProperties().setProperty('PENALTY_SIG', pen.sig);
       }
     }
-    log_('Chạy tự động', [n, a, h, ar, rc, b, w, aa, c, d, p,
+    log_('Chạy tự động', [n, a, h, ar, rc, b, w, wt, aa, c, d, p,
       save ? 'Tiết kiệm thời gian chạy: kết quả R/L, file phạt, sao lưu để lượt 2h sáng' : '', tm.report()].filter(String).join(' | '));
   });
 }
@@ -2829,6 +2830,39 @@ function writingSyncJob_() {
   try {
     withLock_(() => { const w = syncWritingScores_(); if (w) log_('Lấy điểm Writing', w); });
   } catch (e) { scheduleWritingSync_(); }
+}
+
+/**
+ * Cho web chấm Writing biết mỗi bài thuộc lớp nào, bài tập nào trên Classroom (mục "Lớp học" ở hàng chờ
+ * chấm). Chỉ gửi khi danh sách thay đổi (so dấu vân tay với lần gửi trước).
+ */
+function tagWritingEssays_() {
+  const conn = writingConn_();
+  if (!conn) return '';
+  const seen = {};
+  const items = [];
+  subHistory_().forEach(r => {
+    const id = (String(r[S['File nhận xét']] || '').match(/score\/([\w-]+)/) || [])[1];
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    items.push({
+      essayId: id,
+      classLabel: String(r[S['Lớp']] || '').slice(0, 200),
+      assignment: String(r[S['Bài tập']] || '').slice(0, 300),
+      courseworkId: String(r[S['CourseWork ID']] || '').slice(0, 64),
+    });
+  });
+  if (!items.length) return '';
+  const sig = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(items)));
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('WRITING_TAG_SIG') === sig) return '';
+  let added = 0, updated = 0;
+  for (let k = 0; k < items.length; k += 1000) {
+    const d = callWritingApi_(conn, 'portal.essays.tag', { items: items.slice(k, k + 1000) });
+    added += d.added || 0; updated += d.updated || 0;
+  }
+  props.setProperty('WRITING_TAG_SIG', sig);
+  return added || updated ? 'Web Writing: gắn lớp/bài tập cho ' + (added + updated) + ' bài' : '';
 }
 
 function syncWritingScores_() {
