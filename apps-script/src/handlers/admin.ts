@@ -75,6 +75,52 @@ function promptGroups(ctx: Ctx, keys: Map<string, string>, include: string) {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
+/** Classroom class and assignment of each essay sent by the class system (by essay id). */
+function portalLinks(ctx: Ctx): Map<string, Row<'PortalLinks'>> {
+  if (!ctx.svc.spreadsheet.getSheetByName('PortalLinks')) return new Map();
+  return new Map(ctx.db.all('PortalLinks').map((l) => [l.essay_id, l]));
+}
+
+/**
+ * "Lớp học": each class with its assignments (newest first by latest submission), with how many
+ * essays each has and how many still wait for a score.
+ */
+function portalClassList(ctx: Ctx, links: Map<string, Row<'PortalLinks'>>) {
+  const classes = new Map<
+    string,
+    Map<
+      string,
+      { courseworkId: string; title: string; total: number; waiting: number; last: string }
+    >
+  >();
+  for (const e of ctx.db.all('Essays')) {
+    const l = links.get(e.id);
+    if (!l || !l.class_label || !l.coursework_id || e.status === 'draft') continue;
+    if (e.withdrawn_at && e.status !== 'scored') continue;
+    const byCw = classes.get(l.class_label) ?? new Map();
+    classes.set(l.class_label, byCw);
+    const a = byCw.get(l.coursework_id) ?? {
+      courseworkId: l.coursework_id,
+      title: l.assignment || '(không tên)',
+      total: 0,
+      waiting: 0,
+      last: '',
+    };
+    a.total++;
+    if (e.status !== 'scored') a.waiting++;
+    if (e.submitted_at > a.last) a.last = e.submitted_at;
+    byCw.set(l.coursework_id, a);
+  }
+  return [...classes.entries()]
+    .map(([label, byCw]) => ({
+      label,
+      assignments: [...byCw.values()]
+        .sort((x, y) => y.last.localeCompare(x.last))
+        .map(({ last: _last, ...a }) => a),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 /** Overall band for the queue: the sent score, else what would be sent (saved form / AI result). */
 function queueScore(
   ctx: Ctx,
@@ -105,7 +151,14 @@ function queue(ctx: Ctx, payload: unknown) {
   );
   const prompt = r.str('promptKey', { max: 16, optional: true });
   if (prompt && !PROMPT_KEY_RE.test(prompt)) r.addError('promptKey', 'Invalid prompt');
+  // "Lớp học": a Google Classroom class and one of its assignments (essays from the class system)
+  const classLabel = r.str('classLabel', { max: 200, optional: true });
+  const courseworkId = r.str('courseworkId', { max: 64, optional: true });
   r.done();
+  const links = portalLinks(ctx);
+  const linkOf = (id: string) => links.get(id);
+  // One assignment: its whole history (waiting and scored) unless a status is chosen
+  const effStatus = status || (courseworkId ? 'all' : '');
   const users = new Map(ctx.db.all('Users').map((u) => [u.id, u]));
   const assignments = new Map(ctx.db.all('Assignments').map((a) => [a.id, a]));
   const keys = promptKeys(ctx);
@@ -114,7 +167,9 @@ function queue(ctx: Ctx, payload: unknown) {
     .find('Essays', (e) => {
       if (e.status === 'draft') return false;
       if (e.withdrawn_at && e.status !== 'scored') return false;
-      if (status !== 'scored' && status !== 'all' && e.status === 'scored') return false;
+      if (effStatus !== 'scored' && effStatus !== 'all' && e.status === 'scored') return false;
+      if (classLabel && linkOf(e.id)?.class_label !== classLabel) return false;
+      if (courseworkId && linkOf(e.id)?.coursework_id !== courseworkId) return false;
       if (taskType && e.task_type !== taskType) return false;
       if (studentId && e.student_id !== studentId) return false;
       if (assignmentId && e.assignment_id !== assignmentId) return false;
@@ -122,7 +177,7 @@ function queue(ctx: Ctx, payload: unknown) {
       return true;
     })
     .map((e) => ({ essay: e, qs: queueStatus(ctx, e) }))
-    .filter((x) => !status || status === 'all' || x.qs === status)
+    .filter((x) => !effStatus || effStatus === 'all' || x.qs === effStatus)
     .map(({ essay: e, qs }) => ({
       id: e.id,
       studentId: e.student_id,
@@ -143,6 +198,8 @@ function queue(ctx: Ctx, payload: unknown) {
       activity: qs === 'scored' ? resultActivity(ctx, e) : null,
       ai: ai.get(e.id) ?? null,
       score: queueScore(ctx, e, qs),
+      classLabel: linkOf(e.id)?.class_label || null,
+      classAssignment: linkOf(e.id)?.assignment || null,
     }));
   // Oldest first; recently scored essays newest first.
   items.sort((a, b) =>
@@ -168,6 +225,7 @@ function queue(ctx: Ctx, payload: unknown) {
       .sort((a, b) => a.name.localeCompare(b.name)),
     assignments: [...assignments.values()].map((a) => ({ id: a.id, title: a.title })),
     prompts: promptGroups(ctx, keys, prompt),
+    portalClasses: portalClassList(ctx, links),
     emailQueued,
     emailFailed,
   };

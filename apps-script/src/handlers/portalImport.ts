@@ -18,6 +18,7 @@ import { newToken, takeRate } from '../auth';
 import { adminTimezone, ApiError, appUrl, bool, type Ctx } from '../context';
 import { saveUploadedImage } from '../drive';
 import type { ActionDef } from '../router';
+import { SCHEMA } from '../schema';
 import { Reader } from '../validate';
 import { queueAutoDraft } from '../aiScoring';
 import { finalizeSubmission, MAX_PRACTICE_SECONDS } from './essays';
@@ -289,9 +290,73 @@ function essaysStatus(ctx: Ctx, payload: unknown) {
   };
 }
 
+/** The PortalLinks tab, created with its header row when it does not exist yet. */
+export function ensurePortalLinks(ctx: Ctx): boolean {
+  const sp = ctx.svc.spreadsheet;
+  if (sp.getSheetByName('PortalLinks')) return true;
+  const sheet = sp.insertSheet('PortalLinks');
+  const cols = [...SCHEMA.PortalLinks];
+  sheet.getRange(1, 1, 1000, cols.length).setNumberFormat('@');
+  sheet.getRange(1, 1, 1, cols.length).setValues([cols]);
+  sheet.setFrozenRows(1);
+  return true;
+}
+
+/**
+ * The class system tells which Google Classroom class and assignment each essay belongs to
+ * (sent again whenever its list changes). Only essays that exist here are kept.
+ */
+function tagEssays(ctx: Ctx, payload: unknown) {
+  const r = new Reader(payload);
+  checkSecret(ctx, r);
+  const items = r.array('items', 2000).map((raw, i) => {
+    const x = new Reader(raw);
+    const v = {
+      essayId: x.id('essayId'),
+      classLabel: x.str('classLabel', { max: 200, optional: true }),
+      assignment: x.str('assignment', { max: 300, optional: true }),
+      courseworkId: x.str('courseworkId', { max: 64, optional: true }),
+    };
+    r.absorb(`items[${i}]`, x);
+    return v;
+  });
+  r.done();
+  ensurePortalLinks(ctx);
+  const essays = new Set(ctx.db.all('Essays').map((e) => e.id));
+  const have = new Map(ctx.db.all('PortalLinks').map((l) => [l.essay_id, l]));
+  let added = 0;
+  let updated = 0;
+  for (const it of items) {
+    if (!essays.has(it.essayId)) continue;
+    const row = {
+      class_label: it.classLabel,
+      assignment: it.assignment,
+      coursework_id: it.courseworkId,
+    };
+    const old = have.get(it.essayId);
+    if (!old) {
+      ctx.db.insert('PortalLinks', { essay_id: it.essayId, ...row, updated_at: ctx.nowIso });
+      have.set(it.essayId, { essay_id: it.essayId, ...row, updated_at: ctx.nowIso });
+      added++;
+    } else if (
+      old.class_label !== row.class_label ||
+      old.assignment !== row.assignment ||
+      old.coursework_id !== row.coursework_id
+    ) {
+      ctx.db.update('PortalLinks', (l) => l.essay_id === it.essayId, {
+        ...row,
+        updated_at: ctx.nowIso,
+      });
+      updated++;
+    }
+  }
+  return { added, updated };
+}
+
 export const portalImportActions: Record<string, ActionDef> = {
   'portal.essays.import': { write: true, handler: (ctx, p) => importEssay(ctx, p) },
   'portal.essays.status': { write: false, handler: (ctx, p) => essaysStatus(ctx, p) },
+  'portal.essays.tag': { write: true, handler: (ctx, p) => tagEssays(ctx, p) },
   'portal.signin': { write: true, handler: (ctx, p) => signIn(ctx, p) },
   'portal.classes.ensure': { write: true, handler: (ctx, p) => ensureClass(ctx, p) },
 };
