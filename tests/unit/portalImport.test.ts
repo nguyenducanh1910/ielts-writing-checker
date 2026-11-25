@@ -385,3 +385,107 @@ describe('status of imported essays for the class system', () => {
     });
   });
 });
+
+describe('Classroom class and assignment of imported essays ("Lớp học" in the queue)', () => {
+  it('stores the tags and lets the queue show one assignment with its whole history', () => {
+    const { app, admin, base } = setup();
+    const a = app.call('portal.essays.import', base()).essayId;
+    const b = app.call(
+      'portal.essays.import',
+      base({
+        submissionId: 'sub-0000-0002',
+        studentEmail: 'demo.an@example.com',
+        studentName: 'Nguyen Van An',
+      }),
+    ).essayId;
+    const c = app.call('portal.essays.import', base({ submissionId: 'sub-0000-0003' })).essayId;
+    const tag = (items: unknown[]) => app.call('portal.essays.tag', { secret: SECRET, items });
+    expect(
+      tag([
+        { essayId: a, classLabel: 'K230', assignment: 'Buổi 5 – Task 2', courseworkId: 'cw5' },
+        { essayId: b, classLabel: 'K230', assignment: 'Buổi 5 – Task 2', courseworkId: 'cw5' },
+        { essayId: c, classLabel: 'K230', assignment: 'Buổi 6 – Task 2', courseworkId: 'cw6' },
+        {
+          essayId: 'not-an-essay-id-0000',
+          classLabel: 'K230',
+          assignment: 'x',
+          courseworkId: 'cw9',
+        },
+      ]),
+    ).toEqual({ added: 3, updated: 0 });
+    // Sending the same list again changes nothing; a renamed assignment is updated
+    expect(
+      tag([
+        {
+          essayId: c,
+          classLabel: 'K230',
+          assignment: 'Buổi 6 – Task 2 (sửa)',
+          courseworkId: 'cw6',
+        },
+      ]),
+    ).toEqual({ added: 0, updated: 1 });
+
+    // One essay of Buổi 5 is scored: it still shows in the assignment's history
+    app.call(
+      'admin.saveScore',
+      {
+        essayId: a,
+        scores: { task: 6, coherence: 6, lexical: 6, grammar: 6 },
+        errors: [],
+        submit: true,
+      },
+      admin,
+    );
+    const q = app.call('admin.queue', {}, admin);
+    const k230 = q.portalClasses.find((x: any) => x.label === 'K230');
+    expect(k230.assignments.map((x: any) => [x.title, x.total, x.waiting]).sort()).toEqual([
+      ['Buổi 5 – Task 2', 2, 1],
+      ['Buổi 6 – Task 2 (sửa)', 1, 1],
+    ]);
+    const cw5 = app.call('admin.queue', { classLabel: 'K230', courseworkId: 'cw5' }, admin);
+    expect(cw5.items.map((i: any) => i.id).sort()).toEqual([a, b].sort());
+    expect(cw5.items.find((i: any) => i.id === b)).toMatchObject({
+      classLabel: 'K230',
+      classAssignment: 'Buổi 5 – Task 2',
+    });
+    // Only the waiting one when the status is chosen
+    const waiting = app.call(
+      'admin.queue',
+      { classLabel: 'K230', courseworkId: 'cw5', status: 'new' },
+      admin,
+    );
+    expect(waiting.items.map((i: any) => i.id)).toEqual([b]);
+    // A wrong secret is refused
+    expect(app.raw('portal.essays.tag', { secret: 'nope', items: [] }).ok).toBe(false);
+  });
+
+  it('creates the PortalLinks tab when setup() has not added it yet', async () => {
+    const { ensurePortalLinks } = await import('../../apps-script/src/handlers/portalImport');
+    const made: string[] = [];
+    const header: unknown[][] = [];
+    const sheet = {
+      getRange: () => ({
+        setNumberFormat: () => undefined,
+        setValues: (v: unknown[][]) => header.push(...v),
+      }),
+      setFrozenRows: () => undefined,
+    };
+    const ctx: any = {
+      svc: {
+        spreadsheet: {
+          getSheetByName: () => null,
+          insertSheet: (n: string) => (made.push(n), sheet),
+        },
+      },
+    };
+    expect(ensurePortalLinks(ctx)).toBe(true);
+    expect(made).toEqual(['PortalLinks']);
+    expect(header[0]).toEqual([
+      'essay_id',
+      'class_label',
+      'assignment',
+      'coursework_id',
+      'updated_at',
+    ]);
+  });
+});

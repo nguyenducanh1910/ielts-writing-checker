@@ -1022,6 +1022,56 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(gs.autoApproveOverdue_()).toBe('');
   });
 
+  it('tells the Writing app the class and assignment of each essay, only when they change', () => {
+    const props = memoryProps({ WRITING_SECRET: 's' });
+    const gs = load({
+      PropertiesService: props.service,
+      Utilities: {
+        DigestAlgorithm: { MD5: 'MD5' },
+        computeDigest: (_a: string, text: string) => [...text].map((c) => c.charCodeAt(0) % 256),
+        base64Encode: (b: number[]) => Buffer.from(b).toString('base64'),
+      },
+    });
+    const S = gs.__.S;
+    const mk = (id: string, cls: string, title: string, cw: string) => {
+      const r = new Array(40).fill('');
+      r[S['File nhận xét']] = id ? 'https://x/#/admin/score/' + id : '';
+      r[S['Lớp']] = cls;
+      r[S['Bài tập']] = title;
+      r[S['CourseWork ID']] = cw;
+      return r;
+    };
+    const rows = [
+      mk('essay-1', 'K230', 'Buổi 5', 'cw5'),
+      mk('essay-2', 'K230', 'Buổi 6', 'cw6'),
+      mk('', 'K230', 'Speaking', 'cw7'),
+    ];
+    const calls: any[] = [];
+    gs.subHistory_ = () => rows;
+    gs.callWritingApi_ = (_c: unknown, action: string, payload: any) => {
+      calls.push([
+        action,
+        payload.items.map((x: any) => [x.essayId, x.classLabel, x.assignment, x.courseworkId]),
+      ]);
+      return { added: payload.items.length, updated: 0 };
+    };
+    expect(gs.tagWritingEssays_()).toBe('Web Writing: gắn lớp/bài tập cho 2 bài');
+    expect(calls).toEqual([
+      [
+        'portal.essays.tag',
+        [
+          ['essay-1', 'K230', 'Buổi 5', 'cw5'],
+          ['essay-2', 'K230', 'Buổi 6', 'cw6'],
+        ],
+      ],
+    ]);
+    expect(gs.tagWritingEssays_()).toBe(''); // nothing changed: not sent again
+    expect(calls).toHaveLength(1);
+    rows.push(mk('essay-3', 'K231', 'Buổi 1', 'cw1'));
+    gs.tagWritingEssays_();
+    expect(calls).toHaveLength(2);
+  });
+
   it('reads Writing scores from the web app instead of opening its whole sheet', () => {
     const gs = load();
     const S = gs.__.S;
