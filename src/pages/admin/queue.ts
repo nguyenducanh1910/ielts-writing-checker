@@ -40,6 +40,8 @@ export function queuePage(ctx: RouteContext): Node {
     status: q.get('status') ?? '',
     assignmentId: q.get('assignmentId') ?? '',
     promptKey: q.get('promptKey') ?? '',
+    classLabel: q.get('classLabel') ?? '',
+    courseworkId: q.get('courseworkId') ?? '',
   };
   const payload = queueFilters(q);
   return page(
@@ -48,8 +50,8 @@ export function queuePage(ctx: RouteContext): Node {
     async(
       () => api<QueueResponse>('admin.queue', payload),
       (data, reload) => {
-        const apply = (key: string, value: string) => {
-          const next = new URLSearchParams({ ...filters, [key]: value });
+        const apply = (key: string, value: string, extra: Record<string, string> = {}) => {
+          const next = new URLSearchParams({ ...filters, [key]: value, ...extra });
           for (const [k, v] of [...next.entries()]) if (!v) next.delete(k);
           navigate(`/admin${next.toString() ? `?${next}` : ''}`);
         };
@@ -93,6 +95,7 @@ export function queuePage(ctx: RouteContext): Node {
         statusSel.addEventListener('change', () => apply('status', statusSel.value));
         assignmentSel.addEventListener('change', () => apply('assignmentId', assignmentSel.value));
 
+        const classBox = classSection(data, filters, apply);
         const banners = [
           data.emailQueued
             ? notice(
@@ -127,6 +130,7 @@ export function queuePage(ctx: RouteContext): Node {
         });
         return [
           ...banners,
+          classBox,
           h(
             'div',
             { class: 'filters' },
@@ -246,7 +250,79 @@ function aiQueueButton(items: QueueItem[], reload: () => void): HTMLElement | nu
   );
 }
 
-const FILTER_KEYS = ['taskType', 'studentId', 'status', 'assignmentId', 'promptKey'];
+const FILTER_KEYS = [
+  'taskType',
+  'studentId',
+  'status',
+  'assignmentId',
+  'promptKey',
+  'classLabel',
+  'courseworkId',
+];
+
+/**
+ * "Lớp học": pick a Google Classroom class, then one of its assignments to see all its essays
+ * (waiting and scored) — the history of that homework.
+ */
+function classSection(
+  data: QueueResponse,
+  filters: Record<string, string>,
+  apply: (key: string, value: string, extra?: Record<string, string>) => void,
+): HTMLElement | null {
+  const classes = data.portalClasses ?? [];
+  if (!classes.length) return null;
+  const cls = classes.find((c) => c.label === filters.classLabel) ?? null;
+  const classSel = selectEl(
+    'classLabel',
+    classes.map((c) => ({
+      value: c.label,
+      label: `${c.label} (${c.assignments.length} bài tập)`,
+    })),
+    filters.classLabel ?? '',
+    'Tất cả lớp',
+  );
+  classSel.addEventListener('change', () =>
+    apply('classLabel', classSel.value, { courseworkId: '', status: '' }),
+  );
+  const cwSel = selectEl(
+    'courseworkId',
+    (cls?.assignments ?? []).map((a) => ({
+      value: a.courseworkId,
+      label: `${a.title} — ${a.total} bài${a.waiting ? `, ${a.waiting} chờ chấm` : ', đã chấm hết'}`,
+    })),
+    filters.courseworkId ?? '',
+    cls ? 'Tất cả bài tập của lớp' : 'Chọn lớp trước',
+  );
+  cwSel.disabled = !cls;
+  // An assignment shows its whole history (waiting and scored)
+  cwSel.addEventListener('change', () =>
+    apply('courseworkId', cwSel.value, { status: cwSel.value ? 'all' : '' }),
+  );
+  const chosen = cls?.assignments.find((a) => a.courseworkId === filters.courseworkId);
+  return h(
+    'div',
+    { class: 'card' },
+    h('h2', null, 'Lớp học'),
+    h(
+      'div',
+      { class: 'filters' },
+      field({ label: 'Lớp', control: classSel }),
+      h('div', { class: 'filter-wide' }, field({ label: 'Bài tập đã giao', control: cwSel })),
+    ),
+    chosen
+      ? h(
+          'p',
+          { class: 'hint' },
+          `Đang xem toàn bộ ${chosen.total} bài của “${chosen.title}” (cả bài đã chấm). `,
+          link('/admin', 'Bỏ chọn'),
+        )
+      : h(
+          'p',
+          { class: 'hint' },
+          'Chọn lớp rồi chọn bài tập để xem lại tất cả bài nộp của bài tập đó, kể cả bài đã chấm.',
+        ),
+  );
+}
 
 /** The queue filters in a URL query, as an admin.queue payload (empty values left out). */
 export function queueFilters(q: URLSearchParams, keys = FILTER_KEYS): Record<string, string> {
@@ -260,7 +336,14 @@ export function filterQuery(q: URLSearchParams, keys = FILTER_KEYS): string {
 }
 
 /** Filters that pick which essays come next after scoring (the status is always "waiting"). */
-export const NEXT_KEYS = ['taskType', 'studentId', 'assignmentId', 'promptKey'];
+export const NEXT_KEYS = [
+  'taskType',
+  'studentId',
+  'assignmentId',
+  'promptKey',
+  'classLabel',
+  'courseworkId',
+];
 
 function queueRow(item: QueueItem, reload: () => void, next: string): Child[] {
   const retry =
@@ -291,6 +374,12 @@ function queueRow(item: QueueItem, reload: () => void, next: string): Child[] {
       item.isRewrite ? [' ', badge('Rewrite', 'info')] : null,
       item.uploadedByAdmin ? [' ', badge('Uploaded by teacher')] : null,
       item.assignmentTitle ? [' ', badge(item.assignmentTitle)] : null,
+      item.classAssignment
+        ? [
+            h('br'),
+            h('span', { class: 'hint' }, `${item.classLabel ?? ''} · ${item.classAssignment}`),
+          ]
+        : null,
     ],
     [
       modeLabel(item.mode),

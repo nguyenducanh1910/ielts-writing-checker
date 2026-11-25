@@ -30,6 +30,15 @@ export interface QueueItem {
    * 'ai' = the AI result that "Duyệt nhanh" would send. null: nothing to send yet.
    */
   score?: { overall: number; source: 'final' | 'teacher' | 'ai' } | null;
+  /** Google Classroom class and assignment (essays from the class system). */
+  classLabel?: string | null;
+  classAssignment?: string | null;
+}
+
+/** "Lớp học" in the queue: Classroom classes and their assignments. */
+export interface PortalClass {
+  label: string;
+  assignments: Array<{ courseworkId: string; title: string; total: number; waiting: number }>;
 }
 
 export interface AiJobView {
@@ -85,6 +94,7 @@ export interface QueueResponse {
   assignments: Array<{ id: string; title: string }>;
   /** Prompts answered by two or more essays, most answered first. */
   prompts: Array<{ key: string; label: string; count: number }>;
+  portalClasses?: PortalClass[];
   emailQueued: number;
   emailFailed: number;
 }
