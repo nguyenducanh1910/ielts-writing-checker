@@ -105,6 +105,10 @@ const server = createServer(async (req, res) => {
       svc.advance(Number(url.searchParams.get('ms') ?? 0));
       return send(res, 200, { now: svc.now().toISOString() });
     }
+    if (url.pathname === '/__test/portal-secret') {
+      svc.props.PORTAL_SECRET = url.searchParams.get('value') ?? '';
+      return send(res, 200, { ok: true });
+    }
     if (url.pathname === '/__test/daily') return send(res, 200, runDailyJob(svc));
     if (url.pathname === '/__test/hourly') return send(res, 200, runHourlyJob(svc));
     return send(res, 404, { ok: false });
