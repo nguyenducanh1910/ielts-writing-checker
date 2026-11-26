@@ -1072,6 +1072,71 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(calls).toHaveLength(2);
   });
 
+  it('converts Listening / Reading raw scores with the standard IELTS table', () => {
+    const props = memoryProps({ BAND_TABLE_VER: 'old' });
+    const gs = load({ PropertiesService: props.service });
+    const written: unknown[][] = [];
+    const sheet = {
+      getLastRow: () => 50,
+      getRange: () => ({
+        clearContent: () => undefined,
+        setValues: (v: unknown[][]) => written.push(...v),
+      }),
+      getDataRange: () => ({ getValues: () => [['Kỹ năng', 'Từ', 'Đến', 'Band'], ...written] }),
+    };
+    gs.sheet_ = () => sheet;
+    gs.log_ = () => undefined;
+    const bands = gs.loadBands_();
+    expect(props.data.BAND_TABLE_VER).not.toBe('old'); // the sheet was rewritten
+    const band = (skill: string, n: number) => gs.toBand_(bands, skill, n, 40).band;
+    // The teacher's table (Listening and Reading Academic are the same)
+    const lr: Array<[number, number, number]> = [
+      [39, 40, 9],
+      [37, 38, 8.5],
+      [35, 36, 8],
+      [33, 34, 7.5],
+      [30, 32, 7],
+      [27, 29, 6.5],
+      [23, 26, 6],
+      [20, 22, 5.5],
+      [16, 19, 5],
+      [13, 15, 4.5],
+      [10, 12, 4],
+      [7, 9, 3.5],
+      [5, 6, 3],
+      [3, 4, 2.5],
+    ];
+    const gt: Array<[number, number, number]> = [
+      [40, 40, 9],
+      [39, 39, 8.5],
+      [37, 38, 8],
+      [36, 36, 7.5],
+      [34, 35, 7],
+      [32, 33, 6.5],
+      [30, 31, 6],
+      [27, 29, 5.5],
+      [23, 26, 5],
+      [19, 22, 4.5],
+      [15, 18, 4],
+      [12, 14, 3.5],
+      [9, 11, 3],
+      [6, 8, 2.5],
+    ];
+    for (const [a, b, bd] of lr)
+      for (let n = a; n <= b; n++) {
+        expect(band('Listening', n), `Listening ${n}`).toBe(bd);
+        expect(band('Reading (Academic)', n), `Reading ${n}`).toBe(bd);
+      }
+    for (const [a, b, bd] of gt)
+      for (let n = a; n <= b; n++) expect(band('Reading (General)', n), `General ${n}`).toBe(bd);
+    // A test that is not out of 40 is scaled: 30/35 -> 34/40 -> 7.5
+    expect(gs.toBand_(bands, 'Listening', 30, 35)).toEqual({ band: 7.5, scaled: true });
+    // Written once only
+    const before = written.length;
+    gs.loadBands_();
+    expect(written.length).toBe(before);
+  });
+
   it('reads Writing scores from the web app instead of opening its whole sheet', () => {
     const gs = load();
     const S = gs.__.S;
