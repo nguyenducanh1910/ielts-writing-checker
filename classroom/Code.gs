@@ -91,7 +91,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-25.2';
+const CLASSROOM_VERSION = '2026-11-26.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -1540,15 +1540,32 @@ function matchAnswer_(given, expected) {
 
 // ---- Quy đổi band ----------------------------------------------------------
 const DEFAULT_BANDS = [
-  ['Listening', [[39, 40, 9], [37, 38, 8.5], [35, 36, 8], [32, 34, 7.5], [30, 31, 7], [26, 29, 6.5], [23, 25, 6],
-    [18, 22, 5.5], [16, 17, 5], [13, 15, 4.5], [10, 12, 4], [8, 9, 3.5], [6, 7, 3], [4, 5, 2.5], [0, 3, 0]]],
+  ['Listening', [[39, 40, 9], [37, 38, 8.5], [35, 36, 8], [33, 34, 7.5], [30, 32, 7], [27, 29, 6.5], [23, 26, 6],
+    [20, 22, 5.5], [16, 19, 5], [13, 15, 4.5], [10, 12, 4], [7, 9, 3.5], [5, 6, 3], [3, 4, 2.5], [0, 2, 0]]],
   ['Reading (Academic)', [[39, 40, 9], [37, 38, 8.5], [35, 36, 8], [33, 34, 7.5], [30, 32, 7], [27, 29, 6.5], [23, 26, 6],
-    [19, 22, 5.5], [15, 18, 5], [13, 14, 4.5], [10, 12, 4], [8, 9, 3.5], [6, 7, 3], [4, 5, 2.5], [0, 3, 0]]],
+    [20, 22, 5.5], [16, 19, 5], [13, 15, 4.5], [10, 12, 4], [7, 9, 3.5], [5, 6, 3], [3, 4, 2.5], [0, 2, 0]]],
   ['Reading (General)', [[40, 40, 9], [39, 39, 8.5], [37, 38, 8], [36, 36, 7.5], [34, 35, 7], [32, 33, 6.5], [30, 31, 6],
     [27, 29, 5.5], [23, 26, 5], [19, 22, 4.5], [15, 18, 4], [12, 14, 3.5], [9, 11, 3], [6, 8, 2.5], [0, 5, 0]]],
 ];
+/** Đổi phiên bản này khi sửa DEFAULT_BANDS: sheet "Quy đổi band" được ghi lại theo bảng mới (1 lần). */
+const BAND_TABLE_VER = '2026-11-26';
+
+/** Ghi bảng quy đổi chuẩn mới vào sheet "Quy đổi band" (1 lần cho mỗi BAND_TABLE_VER). */
+function ensureBandTable_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('BAND_TABLE_VER') === BAND_TABLE_VER) return false;
+  const sh = sheet_(SH.BAND);
+  const rows = [];
+  DEFAULT_BANDS.forEach(([skill, table]) => table.forEach(([a, b, bd]) => rows.push([skill, a, b, bd])));
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
+  sh.getRange(2, 1, rows.length, 4).setValues(rows);
+  props.setProperty('BAND_TABLE_VER', BAND_TABLE_VER);
+  log_('Quy đổi band', 'Đã cập nhật bảng quy đổi Listening/Reading theo bảng chuẩn mới (' + BAND_TABLE_VER + ')');
+  return true;
+}
 
 function loadBands_() {
+  try { ensureBandTable_(); } catch (e) { /* vẫn đọc bảng hiện có */ }
   const vals = sheet_(SH.BAND).getDataRange().getValues().slice(1);
   const t = {};
   vals.forEach(r => { if (r[0] !== '') (t[r[0]] = t[r[0]] || []).push([Number(r[1]), Number(r[2]), r[3]]); });
