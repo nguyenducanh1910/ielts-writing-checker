@@ -91,7 +91,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-27.1';
+const CLASSROOM_VERSION = '2026-11-27.2';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -1923,6 +1923,8 @@ function callGroq_(parts) {
 
 /** Khi Gemini không chấm được: thử Groq rồi Mistral. */
 function callBackupAi_(parts) {
+  // File lớn đã tải lên Gemini (file_data): Groq/Mistral không đọc được, không chấm thay
+  if (parts.some(p => p && p.file_data)) return undefined;
   const g = callGroq_(parts);
   if (g !== undefined) return g;
   return callMistral_(parts);
@@ -2025,12 +2027,62 @@ function collectFileParts_(fileIdsCsv, displayText, opts) {
     const gm = geminiMime_(mime, name);
     if (!gm) { notes.push('File "' + name + '" (' + mime + ') chưa hỗ trợ — yêu cầu HS nộp Google Docs/ảnh/PDF/mp3.'); return; }
     const size = f.getSize();
-    if (total + size > 14e6) { notes.push('File "' + name + '" quá lớn (>14MB) để chấm tự động.'); return; }
+    if (total + size > 14e6) {
+      // File lớn (ghi âm dài…): tải lên Gemini Files API rồi gửi đường dẫn thay vì nhúng cả file
+      if (size <= GEMINI_UPLOAD_MAX_) {
+        try {
+          const uri = uploadGeminiFile_(f.getBlob(), gm, name);
+          parts.push({ text: '[File: ' + name + ']' });
+          parts.push({ file_data: { mime_type: gm, file_uri: uri } });
+          return;
+        } catch (e) { console.log('Tải file lên Gemini lỗi: ' + e.message); }
+      }
+      notes.push('File "' + name + '" quá lớn (' + Math.round(size / 1e6) + 'MB) để chấm tự động.');
+      return;
+    }
     total += size;
     parts.push({ text: '[File: ' + name + ']' });
     parts.push({ inline_data: { mime_type: gm, data: Utilities.base64Encode(f.getBlob().getBytes()) } });
   });
   return { parts, notes };
+}
+
+/** File lớn hơn mức nhúng trực tiếp: tải lên Gemini Files API (UrlFetchApp gửi tối đa ~50MB mỗi lần). */
+const GEMINI_UPLOAD_MAX_ = 45e6;
+function uploadGeminiFile_(blob, mime, name) {
+  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('Chưa có Gemini API key');
+  const bytes = blob.getBytes();
+  // Bước 1: mở phiên tải lên (resumable), lấy đường dẫn tải
+  const start = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/upload/v1beta/files', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: {
+      'x-goog-api-key': key, 'X-Goog-Upload-Protocol': 'resumable', 'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header-Content-Length': String(bytes.length), 'X-Goog-Upload-Header-Content-Type': mime,
+    },
+    payload: JSON.stringify({ file: { display_name: String(name).slice(0, 100) } }),
+  });
+  const h = start.getHeaders();
+  const urlKey = Object.keys(h || {}).find(k => k.toLowerCase() === 'x-goog-upload-url');
+  const url = urlKey ? h[urlKey] : '';
+  if (!url) throw new Error('Gemini không mở được phiên tải file (' + start.getResponseCode() + ')');
+  // Bước 2: gửi cả file
+  const up = UrlFetchApp.fetch(url, {
+    method: 'post', contentType: mime, muteHttpExceptions: true, payload: bytes,
+    headers: { 'X-Goog-Upload-Offset': '0', 'X-Goog-Upload-Command': 'upload, finalize' },
+  });
+  if (up.getResponseCode() !== 200) throw new Error('Gemini nhận file lỗi ' + up.getResponseCode() + ': ' + up.getContentText().slice(0, 200));
+  let file = JSON.parse(up.getContentText()).file || {};
+  // Bước 3: chờ Gemini xử lý xong (ghi âm thường xong ngay, video có thể vài giây)
+  for (let k = 0; k < 10 && file.state === 'PROCESSING'; k++) {
+    Utilities.sleep(3000);
+    const g = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/' + file.name, {
+      headers: { 'x-goog-api-key': key }, muteHttpExceptions: true,
+    });
+    if (g.getResponseCode() === 200) file = JSON.parse(g.getContentText());
+  }
+  if (!file.uri || file.state === 'FAILED' || file.state === 'PROCESSING') throw new Error('Gemini chưa xử lý xong file (' + (file.state || '?') + ')');
+  return file.uri;
 }
 
 function geminiMime_(mime, name) {
@@ -3939,7 +3991,8 @@ function parseWriting_(paras) {
   // "Write at least … words" (phía trên dòng mốc): phần đó tách khỏi đề, trả về riêng (task*Above).
   const region = (t, stop) => {
     const all = slice(t, t < 0 ? -1 : (stop || -1));
-    const lastInstr = all.map(p => /^Write at least \d+ words/i.test(String(p).trim())).lastIndexOf(true);
+    // "Write at least 250 words." (HS hay xoá mất chữ "words." khi bắt đầu viết ngay bên dưới)
+    const lastInstr = all.map(p => /^Write at least \d+\b/i.test(String(p).trim())).lastIndexOf(true);
     return lastInstr < 0
       ? { prompt: clean(all).join('\n').trim(), above: '' }
       : { prompt: clean(all.slice(0, lastInstr + 1)).join('\n').trim(), above: clean(all.slice(lastInstr + 1)).join('\n').trim() };
@@ -6388,7 +6441,9 @@ function recheckWritingSkips_() {
     const writing = /^Bỏ qua: HS chưa viết Task|^Lỗi: không thấy dòng "TASK/.test(st);
     // Bài lỗi "AI không trả kết quả" (bản cũ báo lỗi ngay từ lần đầu): cho chấm lại
     const aiEmpty = /^Lỗi: AI không trả kết quả$|^Lỗi: AI không trả kết quả \(\{/.test(st);
-    if (writing || aiEmpty) {
+    // Ghi âm quá lớn (>14MB): giờ tải được lên Gemini, chấm lại
+    const bigFile = /^Lỗi — cần kiểm tra tay: File ".*" quá lớn/.test(st);
+    if (writing || aiEmpty || bigFile) {
       t.sh.getRange(i + 2, S['Trạng thái chấm'] + 1, 1, 2).setValues([['Chờ chấm', '']]);
       if (writing) n++; else nAi++;
     }
