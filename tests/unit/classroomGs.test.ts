@@ -1153,6 +1153,80 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(written.length).toBe(before);
   });
 
+  it('finds an essay written under the question when the instruction line was cut short', () => {
+    const gs = load();
+    const essay = [
+      'It is generally believed that living in urban areas is better than living in rural ones.',
+      'In conclusion, the benefits of living in a city are more significant.',
+    ];
+    const w = gs.parseWriting_([
+      'WRITING TASK 2',
+      'You should spend about 40 minutes on this task.',
+      'Some people think that living in a city is better than living in the countryside.',
+      'Do you agree or disagree with this opinion?',
+      'Write at least 250 ', // the student deleted "words." and started writing below
+      ...essay,
+      'TASK 2 – Answer (continued)',
+      'Word count: ............',
+    ]);
+    expect(w.task2Answer).toBe('');
+    expect(w.task2Above).toBe(essay.join('\n'));
+    expect(w.task2Prompt).toContain('Do you agree or disagree');
+    expect(w.task2Prompt).not.toContain('urban areas');
+  });
+
+  it('uploads a recording over 14MB to the Gemini Files API instead of skipping it', () => {
+    const props = memoryProps({ GEMINI_API_KEY: 'k' });
+    const calls: Array<[string, any]> = [];
+    const gs = load({
+      PropertiesService: props.service,
+      Utilities: { base64Encode: () => 'b64', sleep: () => undefined },
+      UrlFetchApp: {
+        fetch: (url: string, opt: any) => {
+          calls.push([url, opt]);
+          if (/upload\/v1beta\/files$/.test(url))
+            return {
+              getResponseCode: () => 200,
+              getHeaders: () => ({ 'x-goog-upload-url': 'https://up/1' }),
+              getContentText: () => '{}',
+            };
+          if (url === 'https://up/1')
+            return {
+              getResponseCode: () => 200,
+              getContentText: () =>
+                JSON.stringify({
+                  file: { name: 'files/abc', uri: 'https://g/files/abc', state: 'PROCESSING' },
+                }),
+            };
+          return {
+            getResponseCode: () => 200,
+            getContentText: () =>
+              JSON.stringify({ name: 'files/abc', uri: 'https://g/files/abc', state: 'ACTIVE' }),
+          };
+        },
+      },
+      DriveApp: {
+        getFileById: (id: string) => ({
+          getMimeType: () => 'audio/x-m4a',
+          getName: () => id + '.m4a',
+          getSize: () => (id === 'big' ? 20e6 : 60e6),
+          getBlob: () => ({ getBytes: () => [1, 2, 3] }),
+        }),
+      },
+      MimeType: { GOOGLE_DOCS: 'gdoc' },
+    });
+    const res = gs.collectFileParts_('big,huge', '', { audioOnly: true });
+    expect(res.parts.map((p: any) => p.file_data?.file_uri ?? p.text)).toEqual([
+      '[File: big.m4a]',
+      'https://g/files/abc',
+    ]);
+    expect(res.notes).toEqual(['File "huge.m4a" quá lớn (60MB) để chấm tự động.']);
+    expect(calls[0]![1].headers['X-Goog-Upload-Command']).toBe('start');
+    expect(calls[1]![1].headers['X-Goog-Upload-Command']).toBe('upload, finalize');
+    // Groq / Mistral cannot read an uploaded file: they do not grade it instead of Gemini
+    expect(gs.callBackupAi_(res.parts)).toBeUndefined();
+  });
+
   it('reads Writing scores from the web app instead of opening its whole sheet', () => {
     const gs = load();
     const S = gs.__.S;
