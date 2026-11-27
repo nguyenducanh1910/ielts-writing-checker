@@ -91,7 +91,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-26.1';
+const CLASSROOM_VERSION = '2026-11-27.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -3913,6 +3913,19 @@ const ANSWER_MARK_ = { 1: /^TASK\s*1\s*(?:[–—:-]\s*)?Answer\b/i, 2: /^TASK\s
 function parseWriting_(paras) {
   // Xuống dòng mềm (Shift+Enter: <w:br/> trong Word, \u000b trong Google Docs) nằm chung 1 <w:p>: tách thành dòng riêng để nhận đúng dòng mốc.
   paras = (paras || []).reduce((acc, p) => acc.concat(String(p).split(/[\r\n\u000b]+/).map(s => s.trim()).filter(String)), []);
+  // Dòng mốc bị dính với chữ phía sau trong cùng 1 đoạn (HS xoá ngắt trang/xuống dòng):
+  // "TASK 2 – AnswerTASK 2 – Answer (continued)", "TASK 2 – AnswerIt is generally…" -> tách thành dòng riêng
+  paras = paras.reduce((acc, p) => {
+    let rest = p;
+    for (let k = 0; k < 5; k++) {
+      const m = rest.match(/^(TASK\s*[12]\s*(?:[–—:-]\s*)?Answer(?:\s*\(continued\))?)\s*(.*)$/i);
+      if (!m || !m[2] || /^s\b/i.test(m[2])) break;
+      acc.push(m[1]);
+      rest = m[2].trim();
+    }
+    if (rest) acc.push(rest);
+    return acc;
+  }, []);
   const idx = re => paras.findIndex(p => re.test(p));
   const t1 = idx(/^WRITING TASK 1\b/i), t2 = idx(/^WRITING TASK 2\b/i);
   // Dòng mốc "TASK 2 – Answer"; HS hay sửa thành "TASK 2 Answer" / "Task 2: Answer" (lấy dòng mốc đầu tiên,
