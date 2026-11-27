@@ -496,6 +496,22 @@ describe('class system code (classroom/Code.gs)', () => {
       'Essay text.',
     ]);
     expect([both.task1Answer, both.task2Answer]).toEqual(['Chart text.', 'Essay text.']);
+    // The marker stuck to the next text in one paragraph (page break deleted): still found.
+    const stuck = gs.parseWriting_([
+      'WRITING TASK 2',
+      'Many people today eat too much fast food. What problems can this cause?',
+      'Write at least 250 words.',
+      'TASK 2 – AnswerTASK 2 – Answer (continued)',
+      'It is generally believed that many people eat too much fast food.',
+      'In conclusion, this issue can be solved.',
+      'Word count: ............',
+    ]);
+    expect(stuck.task2Answer).toBe(
+      'It is generally believed that many people eat too much fast food.\nIn conclusion, this issue can be solved.',
+    );
+    expect(gs.parseWriting_(['TASK 2 – AnswerMy essay starts here.']).task2Answer).toBe(
+      'My essay starts here.',
+    );
   });
 
   it('takes the essay written above the answer line when the answer part is empty (Nhi Thảo, K232)', () => {
