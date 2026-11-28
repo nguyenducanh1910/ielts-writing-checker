@@ -105,7 +105,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-28.2';
+const CLASSROOM_VERSION = '2026-11-28.3';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -3259,11 +3259,25 @@ function planWriting_(plan, files) {
     if (w.task1Prompt.length < 10) throw new PermanentError('Không đọc được đề Writing Task 1 (cần dòng "WRITING TASK 1" trước đề)');
     data.task1Prompt = w.task1Prompt;
     const img = doc.media.filter(b => b.getBytes().length <= 5 * 1024 * 1024)[0];
+    // Task 1 dạng bảng số liệu (bảng Word, không có ảnh): lấy bảng lớn nhất làm "biểu đồ"
+    const isData = t => { const all = [].concat.apply([], t); return t.length >= 2 && all.filter(c => /\d/.test(c)).length >= Math.max(2, all.length / 4); };
+    const table = (doc.tables || []).filter(isData).sort((a, b) => b.length * b[0].length - a.length * a[0].length)[0];
     if (img) {
       const ext = /png$/i.test(img.getName()) ? 'png' : 'jpg';
       img.setContentType(ext === 'png' ? 'image/png' : 'image/jpeg').setName('_' + plan.session + ' Task 1 chart.' + ext);
       data.task1ImageId = assetsFolder_(plan.folder).createFile(img).getId();
-    } else plan.warnings.push('Writing Task 1: không thấy ảnh biểu đồ trong file Word');
+    } else if (table) {
+      // Đề cho AI: bỏ các dòng rời rạc của bảng, thêm bảng theo hàng (rõ cột, rõ số)
+      const cellTexts = [].concat.apply([], table).filter(String);
+      data.task1Prompt = data.task1Prompt.split('\n').filter(l => { const x = l.trim(); return !x || !cellTexts.some(c => c.indexOf(x) >= 0); }).join('\n').trim() +
+        '\n\nTable data:\n' + tableText_(table);
+      try {
+        data.task1ImageId = assetsFolder_(plan.folder).createFile(tableImage_(table, '_' + plan.session + ' Task 1 table')).getId();
+        plan.summaryParts.push('Writing Task 1: biểu đồ dạng bảng (' + table.length + ' hàng) — đã tạo ảnh bảng để chấm');
+      } catch (e) {
+        plan.warnings.push('Writing Task 1: không tạo được ảnh từ bảng số liệu (' + e.message + ') — AI vẫn đọc số liệu bảng trong đề');
+      }
+    } else plan.warnings.push('Writing Task 1: không thấy ảnh biểu đồ hay bảng số liệu trong file Word');
     types.push(writingTypeLabel_('task1_academic', detectWritingType_('task1_academic', w.task1Prompt)));
     plan.components.push('Writing Task 1');
   }
@@ -3533,7 +3547,19 @@ function readDocx_(fileOrId) {
     const paras = body.getParagraphs().map(p => String(p.getText()).replace(/[  ]+/g, ' ').trim()).filter(String);
     let media = [];
     try { media = body.getImages().map(im => im.getBlob()); } catch (e) { /* không có ảnh */ }
-    return { paras, media };
+    let tables = [];
+    try {
+      tables = body.getTables().map(t => {
+        const rows = [];
+        for (let i = 0; i < t.getNumRows(); i++) {
+          const r = t.getRow(i), cells = [];
+          for (let j = 0; j < r.getNumCells(); j++) cells.push(String(r.getCell(j).getText()).replace(/\s+/g, ' ').trim());
+          rows.push(cells);
+        }
+        return rows;
+      });
+    } catch (e) { /* không có bảng */ }
+    return { paras, media, tables };
   }
   const blob = f.getBlob();
   let entries;
@@ -3541,10 +3567,42 @@ function readDocx_(fileOrId) {
   catch (e) { throw new PermanentError('"' + f.getName() + '" không phải file .docx hợp lệ (file .doc cũ: mở Word và lưu lại thành .docx)'); }
   const docXml = entries.filter(b => /document\.xml$/.test(b.getName()) && !/glossary/i.test(b.getName()))[0];
   if (!docXml) throw new PermanentError('"' + f.getName() + '" không có nội dung Word đọc được');
+  const xml = docXml.getDataAsString('UTF-8');
   return {
-    paras: docxXmlToParagraphs_(docXml.getDataAsString('UTF-8')),
+    paras: docxXmlToParagraphs_(xml),
     media: entries.filter(b => /\.(png|jpe?g)$/i.test(b.getName()) && !/thumbnail/i.test(b.getName())),
+    tables: docxXmlToTables_(xml),
   };
+}
+
+/** Các bảng trong XML Word -> [[ô của hàng 1], [ô của hàng 2], …] (bảng lồng nhau: lấy chữ của cả ô). */
+function docxXmlToTables_(xml) {
+  const out = [];
+  String(xml).split(/<w:tbl>/).slice(1).forEach(chunk => {
+    const tbl = chunk.split(/<\/w:tbl>/)[0];
+    const rows = tbl.split(/<w:tr[ >]/).slice(1).map(tr => tr.split(/<w:tc>/).slice(1).map(tc =>
+      docxXmlToParagraphs_('<w:body>' + tc).join(' ').replace(/\s+/g, ' ').trim()));
+    if (rows.length) out.push(rows.filter(r => r.some(String)));
+  });
+  return out.filter(t => t.length);
+}
+
+/** Bảng số liệu -> ảnh PNG (Charts TableChart), dùng làm "ảnh biểu đồ" cho Task 1 dạng bảng. */
+function tableImage_(rows, title) {
+  const width = Math.max.apply(null, rows.map(r => r.length));
+  const norm = rows.map(r => r.concat(new Array(width - r.length).fill('')));
+  const dt = Charts.newDataTable();
+  norm[0].forEach((h, j) => dt.addColumn(Charts.ColumnType.STRING, h || ' ' + (j + 1)));
+  norm.slice(1).forEach(r => dt.addRow(r));
+  const chart = Charts.newTableChart().setDataTable(dt.build())
+    .setDimensions(Math.min(1400, 160 * width), Math.min(1200, 60 + 34 * norm.length))
+    .setOption('allowHtml', false).setOption('sort', 'disable').build();
+  return chart.getAs('image/png').setName(String(title || 'table') + '.png');
+}
+
+/** Bảng -> văn bản cho AI: "Country | Food | …" mỗi hàng 1 dòng. */
+function tableText_(rows) {
+  return rows.map(r => r.join(' | ')).join('\n');
 }
 
 /**
@@ -4018,12 +4076,20 @@ function parseWriting_(paras) {
   const region = (t, stop) => {
     const all = slice(t, t < 0 ? -1 : (stop || -1));
     // Một Task có thể gồm nhiều biểu đồ: "WRITING TASK 1 – CHART 1", "WRITING TASK 1 – CHART 2"… mỗi phần có đề và bài riêng
-    const heads = [-1].concat(all.map((p, i) => (/^WRITING TASK\s*[12]\b/i.test(p) ? i : -1)).filter(i => i >= 0));
+    let heads = [-1].concat(all.map((p, i) => (/^WRITING TASK\s*[12]\b/i.test(p) ? i : -1)).filter(i => i >= 0));
+    // Trang bìa cũng có dòng "WRITING TASK 1" giống tiêu đề đề bài: chỉ giữ phần cuối cùng mang cùng tiêu đề
+    const headText = h => String(h >= 0 ? all[h] : (t >= 0 ? paras[t] : '')).replace(/\s+/g, ' ').trim().toLowerCase();
+    heads = heads.filter((h, k) => !heads.slice(k + 1).some(x => headText(x) === headText(h)));
     const prompts = [], aboves = [];
     heads.forEach((h, k) => {
       const sec = all.slice(h + 1, k + 1 < heads.length ? heads[k + 1] : all.length);
       const title = h >= 0 ? all[h] : (t >= 0 ? paras[t] : '');
-      const li = sec.map(p => INSTR.test(String(p).trim())).lastIndexOf(true);
+      let li = sec.map(p => INSTR.test(String(p).trim())).lastIndexOf(true);
+      // Ngay sau dòng hướng dẫn có thể là tên bảng / ô của bảng số liệu (đề Task 1 dạng bảng): vẫn thuộc đề
+      if (li >= 0) {
+        const dataLike = p => { const n = (String(p).match(/\S+/g) || []).length; return n <= 4 || (n < 12 && /\d/.test(p) && !/[.!?]$/.test(String(p).trim())); };
+        while (li + 1 < sec.length && dataLike(sec[li + 1]) && !ANSWER_MARK_[1].test(sec[li + 1]) && !ANSWER_MARK_[2].test(sec[li + 1])) li++;
+      }
       const prompt = clean(li < 0 ? sec : sec.slice(0, li + 1)).join('\n').trim();
       if (prompt) prompts.push((heads.length > 1 && title ? title + '\n' : '') + prompt);
       const ans = li < 0 ? [] : clean(sec.slice(li + 1)).filter(p => !LABEL.test(String(p).trim()));
