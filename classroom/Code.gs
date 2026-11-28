@@ -105,7 +105,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-28.3';
+const CLASSROOM_VERSION = '2026-11-28.4';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -2551,7 +2551,7 @@ function writingEssay_(r, cw, skill, cfg, allowOcr) {
   const templated = !!cwData_(cw).writing || componentsOf_(cw).length > 1;
   const texts = String(r[S['Bài làm']] || '').split('\n').filter(l => l.indexOf('Trả lời: ') === 0).map(l => l.slice(9));
   const media = [];
-  let sawMarkers = false, sawDoc = false;
+  let sawMarkers = false, sawDoc = false, sawMark = false;
   const others = []; // file Word/Docs không theo mẫu (HS tự tạo file mới)
   const emptyDocs = []; // file Word/Docs HS nộp nhưng trống
   const ids = String(r[S['File IDs']] || '').split(',').filter(String);
@@ -2571,6 +2571,7 @@ function writingEssay_(r, cw, skill, cfg, allowOcr) {
         const above = task === 1 ? w.task1Above : w.task2Above;
         // Đề không có dòng mốc cho Task này (VD Task 1 nhiều biểu đồ, viết ngay dưới mỗi đề): bài nằm dưới dòng hướng dẫn
         const hasMark = task === 1 ? w.mark1 : w.mark2;
+        if (hasMark) sawMark = true;
         if (countWords_(above) >= (writingPartOf_(cw, skill) || !hasMark ? 8 : 50)) {
           return hasMark ? { text: above, note: 'HS viết bài phía trên dòng "TASK ' + task + ' – Answer"' } : { text: above };
         }
@@ -2593,7 +2594,7 @@ function writingEssay_(r, cw, skill, cfg, allowOcr) {
       return { text: '', stop: 'Lỗi — cần kiểm tra tay: file Writing mẫu còn trống ở Task ' + task + ', HS nộp bài ở file khác (' + names + ')' };
     }
     if (media.length) return { text: '', stop: 'Lỗi — cần kiểm tra tay: file Writing mẫu còn trống ở Task ' + task + ', HS nộp kèm ảnh/PDF (có thể là bài viết tay)' };
-    return { text: '', stop: 'Bỏ qua: HS chưa viết Task ' + task + ' (phần dưới dòng "TASK ' + task + ' – Answer" trống)' };
+    return { text: '', stop: 'Bỏ qua: HS chưa viết Task ' + task + ' (phần ' + (sawMark ? 'dưới dòng "TASK ' + task + ' – Answer"' : 'bài làm dưới đề') + ' trống)' };
   }
   if (templated && sawDoc) {
     return { text: '', stop: 'Lỗi: không thấy dòng "TASK ' + task + ' – Answer" trong file Word của HS (có thể đã bị xoá) — cần kiểm tra tay' };
@@ -4081,6 +4082,7 @@ function parseWriting_(paras) {
     const headText = h => String(h >= 0 ? all[h] : (t >= 0 ? paras[t] : '')).replace(/\s+/g, ' ').trim().toLowerCase();
     heads = heads.filter((h, k) => !heads.slice(k + 1).some(x => headText(x) === headText(h)));
     const prompts = [], aboves = [];
+    let area = false;
     heads.forEach((h, k) => {
       const sec = all.slice(h + 1, k + 1 < heads.length ? heads[k + 1] : all.length);
       const title = h >= 0 ? all[h] : (t >= 0 ? paras[t] : '');
@@ -4088,19 +4090,23 @@ function parseWriting_(paras) {
       // Ngay sau dòng hướng dẫn có thể là tên bảng / ô của bảng số liệu (đề Task 1 dạng bảng): vẫn thuộc đề
       if (li >= 0) {
         const dataLike = p => { const n = (String(p).match(/\S+/g) || []).length; return n <= 4 || (n < 12 && /\d/.test(p) && !/[.!?]$/.test(String(p).trim())); };
-        while (li + 1 < sec.length && dataLike(sec[li + 1]) && !ANSWER_MARK_[1].test(sec[li + 1]) && !ANSWER_MARK_[2].test(sec[li + 1])) li++;
+        const areaLine = p => LABEL.test(String(p).trim()) || /^Word count\b/i.test(String(p).trim());
+        while (li + 1 < sec.length && dataLike(sec[li + 1]) && !areaLine(sec[li + 1]) && !ANSWER_MARK_[1].test(sec[li + 1]) && !ANSWER_MARK_[2].test(sec[li + 1])) li++;
+        // Đề không có dòng "TASK n – Answer" nhưng có chỗ để HS viết ngay dưới đề (nhãn Introduction/Overview…, dòng Word count)
+        if (sec.slice(li + 1).some(areaLine)) area = true;
       }
       const prompt = clean(li < 0 ? sec : sec.slice(0, li + 1)).join('\n').trim();
       if (prompt) prompts.push((heads.length > 1 && title ? title + '\n' : '') + prompt);
       const ans = li < 0 ? [] : clean(sec.slice(li + 1)).filter(p => !LABEL.test(String(p).trim()));
       if (ans.length) aboves.push((heads.length > 1 && title ? '[' + title + ']\n' : '') + ans.join('\n'));
     });
-    return { prompt: prompts.join('\n\n').trim(), above: aboves.join('\n\n').trim() };
+    return { prompt: prompts.join('\n\n').trim(), above: aboves.join('\n\n').trim(), area };
   };
   // Hỗ trợ cả 2 bố cục: đề 1, đề 2 rồi 2 dòng mốc; hoặc xen kẽ đề 1, mốc 1, đề 2, mốc 2
   const r1 = region(t1, end(t1, [t2, a1, a2])), r2 = region(t2, end(t2, [a1, a2]));
   return {
-    hasMarkers: a1 >= 0 || a2 >= 0,
+    // Có dòng mốc, hoặc có chỗ viết bài ngay dưới đề (đề luyện từng phần: Introduction / Overview)
+    hasMarkers: a1 >= 0 || a2 >= 0 || r1.area || r2.area,
     mark1: a1 >= 0,
     mark2: a2 >= 0,
     has1: a1 >= 0 || t1 >= 0,
