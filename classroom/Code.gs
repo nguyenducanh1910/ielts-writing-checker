@@ -46,20 +46,34 @@ const SKILL_OTHER = 'Khác (chỉ theo dõi)';
 const SKILLS = [
   'Reading (Academic)', 'Reading (General)', 'Listening',
   'Writing Task 1', 'Writing Task 2', 'Speaking',
-  'Reading + Writing', 'Listening + Speaking', 'Writing Task 1 + 2', SKILL_OTHER,
+  'Reading + Writing', 'Listening + Speaking', 'Listening + Writing', 'Reading + Speaking',
+  'Reading + Listening', 'Writing + Speaking', 'Writing Task 1 + 2', SKILL_OTHER,
 ];
 
 // Bài gộp -> các phần được chấm riêng (mỗi phần 1 dòng trong sheet "Nộp bài")
 const SKILL_COMPONENTS = {
   'Reading + Writing': ['Reading (Academic)', 'Writing Task 1', 'Writing Task 2'],
   'Listening + Speaking': ['Listening', 'Speaking'],
+  'Listening + Writing': ['Listening', 'Writing Task 1', 'Writing Task 2'],
+  'Reading + Speaking': ['Reading (Academic)', 'Speaking'],
+  'Reading + Listening': ['Reading (Academic)', 'Listening'],
+  'Writing + Speaking': ['Writing Task 1', 'Writing Task 2', 'Speaking'],
   'Writing Task 1 + 2': ['Writing Task 1', 'Writing Task 2'],
 };
 
 const ASSIGN_TYPES = {
   'Reading + Writing': ['R', 'W'],
   'Listening + Speaking': ['L', 'S'],
+  'Listening + Writing': ['L', 'W'],
+  'Reading + Speaking': ['R', 'S'],
+  'Reading + Listening': ['R', 'L'],
+  'Writing + Speaking': ['W', 'S'],
   'Reading': ['R'], 'Listening': ['L'], 'Writing': ['W'], 'Speaking': ['S'],
+};
+/** Tên ngắn trên Classroom: "L27 LW" */
+const ASSIGN_SHORT = {
+  'Reading + Writing': 'RW', 'Listening + Speaking': 'LS', 'Listening + Writing': 'LW',
+  'Reading + Speaking': 'RS', 'Reading + Listening': 'RL', 'Writing + Speaking': 'WS',
 };
 const ASSIGN_HEADERS = [
   'Lớp', 'Buổi', 'Loại bài', 'Link thư mục Drive', 'Hạn nộp', 'Ghi chú thêm cho HS', 'Đăng ngay', // giáo viên nhập
@@ -91,7 +105,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-28.1';
+const CLASSROOM_VERSION = '2026-11-28.2';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -3321,7 +3335,7 @@ function createAssignment_(plan) {
       catch (e) { console.warn('Không tạo được PDF từ ' + a.name + ': ' + e); }
     });
 
-    const short = { 'Reading + Writing': 'RW', 'Listening + Speaking': 'LS' }[plan.type] || plan.type;
+    const short = ASSIGN_SHORT[plan.type] || plan.type;
     const body = {
       title: plan.session + ' ' + short,
       description: assignDescription_(plan),
