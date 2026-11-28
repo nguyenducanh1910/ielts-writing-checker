@@ -1212,6 +1212,90 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(w.task2Answer).toBe('It is generally believed that many people search online.');
   });
 
+  it('accepts a Task 1 whose chart is a Word table: makes an image and gives the AI the numbers', () => {
+    const built: any[] = [];
+    const dataTable = () => {
+      const d: any = { cols: [] as string[], rows: [] as string[][] };
+      d.addColumn = (_t: unknown, h: string) => (d.cols.push(h), d);
+      d.addRow = (r: string[]) => (d.rows.push(r), d);
+      d.build = () => d;
+      return d;
+    };
+    const chartBuilder: any = {};
+    chartBuilder.setDataTable = (d: any) => (built.push(d), chartBuilder);
+    chartBuilder.setDimensions = () => chartBuilder;
+    chartBuilder.setOption = () => chartBuilder;
+    chartBuilder.build = () => ({ getAs: () => ({ setName: (n: string) => ({ name: n }) }) });
+    const gs = load({
+      Charts: {
+        newDataTable: dataTable,
+        newTableChart: () => chartBuilder,
+        ColumnType: { STRING: 'string' },
+      },
+    });
+    const xml =
+      '<w:body><w:p><w:r><w:t>WRITING TASK 1</w:t></w:r></w:p>' +
+      '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Country</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Food /</w:t></w:r></w:p><w:p><w:r><w:t>Drinks</w:t></w:r></w:p></w:tc></w:tr>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>Ireland</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>28.91%</w:t></w:r></w:p></w:tc></w:tr>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>Italy</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>16.36%</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body>';
+    const tables = gs.docxXmlToTables_(xml);
+    expect(tables).toEqual([
+      [
+        ['Country', 'Food / Drinks'],
+        ['Ireland', '28.91%'],
+        ['Italy', '16.36%'],
+      ],
+    ]);
+    const paras = [
+      'WRITING TASK 1', // cover page
+      'Write at least 150 words.',
+      'WRITING TASK 1',
+      'You should spend about 20 minutes on this task.',
+      'The table below gives information on consumer spending in 2002.',
+      'Summarise the information by selecting and reporting the main features.',
+      'Write at least 150 words.',
+      'Percentage of national consumer expenditure – 2002',
+      'Country',
+      'Food /',
+      'Drinks',
+      'Ireland',
+      '28.91%',
+      'Italy',
+      '16.36%',
+      'TASK 1 – Answer',
+      'TASK 1 – Answer (continued)',
+    ];
+    gs.readDocx_ = () => ({ paras, media: [], tables });
+    gs.assetsFolder_ = () => ({ createFile: () => ({ getId: () => 'img-1' }) });
+    const plan: any = {
+      session: 'L30',
+      folder: {},
+      attach: [],
+      warnings: [],
+      summaryParts: [],
+      components: [],
+      writingPartsText: '',
+    };
+    gs.planWriting_(plan, [
+      {
+        skill: 'W',
+        teacher: false,
+        mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        file: { getId: () => 'doc-1' },
+        name: 'Writing.docx',
+      },
+    ]);
+    expect(plan.warnings).toEqual([]);
+    expect(plan.writing.task1ImageId).toBe('img-1');
+    expect(built[0].cols).toEqual(['Country', 'Food / Drinks']);
+    expect(plan.writing.task1Prompt).toBe(
+      'The table below gives information on consumer spending in 2002.\n' +
+        'Summarise the information by selecting and reporting the main features.\n' +
+        'Percentage of national consumer expenditure – 2002\n\n' +
+        'Table data:\nCountry | Food / Drinks\nIreland | 28.91%\nItaly | 16.36%',
+    );
+  });
+
   it('uploads a recording over 14MB to the Gemini Files API instead of skipping it', () => {
     const props = memoryProps({ GEMINI_API_KEY: 'k' });
     const calls: Array<[string, any]> = [];
