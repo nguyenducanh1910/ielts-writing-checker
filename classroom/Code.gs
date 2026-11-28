@@ -91,7 +91,7 @@ const WRITING_TYPES = {
 };
 const WRITING_ENGINE_WEB = 'Web IELTS Writing Checker';
 /** Phiên bản code này. Trang web (src/versions.ts) phải ghi đúng số này; tăng cả hai khi sửa Code.gs. */
-const CLASSROOM_VERSION = '2026-11-27.2';
+const CLASSROOM_VERSION = '2026-11-28.1';
 const DEFAULT_WRITING_API = 'https://script.google.com/macros/s/AKfycbzqAmX3yzhlRbtwwAjB9C-JUCRha1ZpEiO0ACOFFVg7i4S-ZsbcWKDeDytbgpU_Evw6/exec';
 const DEFAULT_WRITING_APP = 'https://nguyenducanh1910.github.io/ielts-writing-checker/';
 
@@ -2555,7 +2555,11 @@ function writingEssay_(r, cw, skill, cfg, allowOcr) {
         if (ans && countWords_(ans) >= (writingPartOf_(cw, skill) ? 8 : 20)) return { text: ans };
         // Phần dưới dòng mốc trống nhưng HS viết bài phía trên (ngay dưới đề)
         const above = task === 1 ? w.task1Above : w.task2Above;
-        if (countWords_(above) >= 50) return { text: above, note: 'HS viết bài phía trên dòng "TASK ' + task + ' – Answer"' };
+        // Đề không có dòng mốc cho Task này (VD Task 1 nhiều biểu đồ, viết ngay dưới mỗi đề): bài nằm dưới dòng hướng dẫn
+        const hasMark = task === 1 ? w.mark1 : w.mark2;
+        if (countWords_(above) >= (writingPartOf_(cw, skill) || !hasMark ? 8 : 50)) {
+          return hasMark ? { text: above, note: 'HS viết bài phía trên dòng "TASK ' + task + ' – Answer"' } : { text: above };
+        }
         continue;
       }
       texts.push(paras.join('\n'));
@@ -2740,6 +2744,9 @@ function writingPartOf_(cw, skill) {
 
 /** Chấm bài luyện từng phần: nhận xét theo tiêu chí của phần đó, không cho band IELTS. */
 function gradeWritingPart_(r, skill, part, task, content, cfg) {
+  // Task 1 nhiều biểu đồ (mỗi biểu đồ 1 phần "[WRITING TASK 1 – CHART n]"): độ dài hợp lý nhân theo số biểu đồ
+  const charts = (content.parts.map(x => x.text || '').join('\n').match(/^\[WRITING TASK\s*1\b[^\]]*\]$/gim) || []).length;
+  if (charts > 1) part = Object.assign({}, part, { words: part.words.map(x => x * charts), label: part.label + ' (' + charts + ' biểu đồ, mỗi biểu đồ 1 phần)' });
   const words = countWords_(content.parts.map(x => x.text || '').join(' '));
   const prompt = [
     'You are an experienced IELTS Writing teacher. The student was asked to write ONLY this part of an IELTS ' + skill + ' answer: "' + part.label + '".',
@@ -3989,18 +3996,33 @@ function parseWriting_(paras) {
     const end = (s, cands) => cands.filter(x => x > s).sort((x, y) => x - y)[0];
   // Đề của 1 Task (từ "WRITING TASK n" tới Task sau / dòng mốc đầu tiên). Có HS viết bài ngay dưới dòng
   // "Write at least … words" (phía trên dòng mốc): phần đó tách khỏi đề, trả về riêng (task*Above).
+  // Dòng hướng dẫn cuối của đề: "Write at least 250 words." (HS hay xoá mất chữ "words." khi viết ngay bên dưới),
+  // hoặc đề luyện từng phần "Write ONLY the Introduction and the Overview."
+  const INSTR = /^(Write at least \d+\b|Write only\b)/i;
+  // Nhãn HS/đề để sẵn trước mỗi đoạn (không phải bài viết)
+  const LABEL = /^(Introduction|Overview|Body(\s*(paragraph)?\s*\d)?|Conclusion|Mở bài|Tổng quan|Thân bài(\s*\d)?|Kết bài)\s*:?$/i;
   const region = (t, stop) => {
     const all = slice(t, t < 0 ? -1 : (stop || -1));
-    // "Write at least 250 words." (HS hay xoá mất chữ "words." khi bắt đầu viết ngay bên dưới)
-    const lastInstr = all.map(p => /^Write at least \d+\b/i.test(String(p).trim())).lastIndexOf(true);
-    return lastInstr < 0
-      ? { prompt: clean(all).join('\n').trim(), above: '' }
-      : { prompt: clean(all.slice(0, lastInstr + 1)).join('\n').trim(), above: clean(all.slice(lastInstr + 1)).join('\n').trim() };
+    // Một Task có thể gồm nhiều biểu đồ: "WRITING TASK 1 – CHART 1", "WRITING TASK 1 – CHART 2"… mỗi phần có đề và bài riêng
+    const heads = [-1].concat(all.map((p, i) => (/^WRITING TASK\s*[12]\b/i.test(p) ? i : -1)).filter(i => i >= 0));
+    const prompts = [], aboves = [];
+    heads.forEach((h, k) => {
+      const sec = all.slice(h + 1, k + 1 < heads.length ? heads[k + 1] : all.length);
+      const title = h >= 0 ? all[h] : (t >= 0 ? paras[t] : '');
+      const li = sec.map(p => INSTR.test(String(p).trim())).lastIndexOf(true);
+      const prompt = clean(li < 0 ? sec : sec.slice(0, li + 1)).join('\n').trim();
+      if (prompt) prompts.push((heads.length > 1 && title ? title + '\n' : '') + prompt);
+      const ans = li < 0 ? [] : clean(sec.slice(li + 1)).filter(p => !LABEL.test(String(p).trim()));
+      if (ans.length) aboves.push((heads.length > 1 && title ? '[' + title + ']\n' : '') + ans.join('\n'));
+    });
+    return { prompt: prompts.join('\n\n').trim(), above: aboves.join('\n\n').trim() };
   };
   // Hỗ trợ cả 2 bố cục: đề 1, đề 2 rồi 2 dòng mốc; hoặc xen kẽ đề 1, mốc 1, đề 2, mốc 2
   const r1 = region(t1, end(t1, [t2, a1, a2])), r2 = region(t2, end(t2, [a1, a2]));
   return {
     hasMarkers: a1 >= 0 || a2 >= 0,
+    mark1: a1 >= 0,
+    mark2: a2 >= 0,
     has1: a1 >= 0 || t1 >= 0,
     has2: a2 >= 0 || t2 >= 0,
     task1Prompt: r1.prompt,
