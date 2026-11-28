@@ -514,6 +514,43 @@ describe('class system code (classroom/Code.gs)', () => {
     );
   });
 
+  it('accepts a practice file with Introduction / Overview labels instead of "TASK 1 – Answer"', () => {
+    const gs = load();
+    const file = [
+      'WRITING TASK 1', // cover page
+      'Write ONLY the Introduction and the Overview (about 50–70 words in total).',
+      'WRITING TASK 1',
+      'You should spend about 10 minutes on this task.',
+      'The chart below shows the percentage of people who used different types of transport in 1960, 1980 and 2000.',
+      'Summarise the information by selecting and reporting the main features.',
+      'Write ONLY the Introduction and the Overview.',
+      'Introduction',
+      'Overview',
+      'Word count: ............',
+    ];
+    const t = gs.parseWriting_(file);
+    expect(t.hasMarkers).toBe(true);
+    expect(t.mark1).toBe(false);
+    expect(t.task1Prompt).toBe(
+      'The chart below shows the percentage of people who used different types of transport in 1960, 1980 and 2000.\n' +
+        'Summarise the information by selecting and reporting the main features.\n' +
+        'Write ONLY the Introduction and the Overview.',
+    );
+    const s = gs.parseWriting_([
+      ...file.slice(0, 8),
+      'The bar chart compares how people travelled to work in 1960, 1980 and 2000.',
+      'Overview',
+      'Overall, car use rose sharply while walking fell.',
+      'Word count: 25',
+    ]);
+    expect(s.task1Above).toBe(
+      'The bar chart compares how people travelled to work in 1960, 1980 and 2000.\n' +
+        'Overall, car use rose sharply while walking fell.',
+    );
+    // A prompt with no answer line and no answer area is still refused
+    expect(gs.parseWriting_(file.slice(0, 7)).hasMarkers).toBe(false);
+  });
+
   it('takes the essay written above the answer line when the answer part is empty (Nhi Thảo, K232)', () => {
     const gs = load();
     const essay =
