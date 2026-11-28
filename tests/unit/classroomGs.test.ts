@@ -1175,6 +1175,43 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(w.task2Prompt).not.toContain('urban areas');
   });
 
+  it('reads a Task 1 with two charts written under each chart (no "TASK 1 – Answer" line)', () => {
+    const gs = load();
+    const w = gs.parseWriting_([
+      'WRITING TASK 1 – CHART 1',
+      'You should spend about 10 minutes on this task.',
+      'The charts below show the use of water for agricultural products in Australia in 2004.',
+      'Write ONLY the Introduction and the Overview.  (Chỉ viết mở bài và đoạn tổng quan.)',
+      'Introduction',
+      'The charts illustrate the use of water in Australia in 2004.',
+      'Overview',
+      'Overall, livestock used the most water.',
+      'WRITING TASK 1 – CHART 2',
+      'You should spend about 10 minutes on this task.',
+      'The graph below illustrates the sales of five products across four seasons.',
+      'Write ONLY the Introduction and the Overview.',
+      'Introduction',
+      'The graph shows the sales of five products.',
+      'Overview',
+      'WRITING TASK 2',
+      'Many people use the Internet to get medical advice. Why is this?',
+      'Write at least 250 words.',
+      'TASK 2 – Answer',
+      'It is generally believed that many people search online.',
+      'TASK 2 – Answer (continued)',
+      'Word count: ............',
+    ]);
+    expect(w.mark1).toBe(false);
+    expect(w.task1Above).toBe(
+      '[WRITING TASK 1 – CHART 1]\nThe charts illustrate the use of water in Australia in 2004.\nOverall, livestock used the most water.' +
+        '\n\n[WRITING TASK 1 – CHART 2]\nThe graph shows the sales of five products.',
+    );
+    expect(w.task1Prompt).toContain('WRITING TASK 1 – CHART 2');
+    expect(w.task1Prompt).toContain('sales of five products across four seasons');
+    expect(w.task1Prompt).not.toContain('livestock used');
+    expect(w.task2Answer).toBe('It is generally believed that many people search online.');
+  });
+
   it('uploads a recording over 14MB to the Gemini Files API instead of skipping it', () => {
     const props = memoryProps({ GEMINI_API_KEY: 'k' });
     const calls: Array<[string, any]> = [];
