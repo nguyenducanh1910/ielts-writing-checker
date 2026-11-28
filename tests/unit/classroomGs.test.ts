@@ -1264,6 +1264,37 @@ describe('class system code (classroom/Code.gs)', () => {
     expect(gs.callBackupAi_(res.parts)).toBeUndefined();
   });
 
+  it('offers mixed homework types (Listening + Writing, Reading + Speaking …)', () => {
+    const gs = load();
+    gs.pCourses_ = () => [];
+    const opt = gs.portalAssignOptions_();
+    for (const t of [
+      'Reading + Writing',
+      'Listening + Speaking',
+      'Listening + Writing',
+      'Reading + Speaking',
+      'Reading + Listening',
+      'Writing + Speaking',
+    ])
+      expect(opt.types).toContain(t);
+    // The Writing parts box shows for every type with Writing
+    expect(opt.writingTypes).toEqual(
+      expect.arrayContaining([
+        'Listening + Writing',
+        'Writing + Speaking',
+        'Reading + Writing',
+        'Writing',
+      ]),
+    );
+    expect(opt.writingTypes).not.toContain('Reading + Speaking');
+    // An old Classroom row without saved parts still splits into its parts
+    expect(gs.componentsOf_(['', '', 'Listening + Writing'])).toEqual([
+      'Listening',
+      'Writing Task 1',
+      'Writing Task 2',
+    ]);
+  });
+
   it('reads Writing scores from the web app instead of opening its whole sheet', () => {
     const gs = load();
     const S = gs.__.S;
